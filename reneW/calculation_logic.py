@@ -19,8 +19,12 @@ PARAMETERS = {
         'D-Plast': {'a': 61.29814935110069, 'b': 0.043661643079612622, 'c': 30},
         'D-Övrigt/ okänt C': {'a': 1.9366525983057512, 'b': 0.022838846131023077, 'c': 30},
         'D-Övrigt/ okänt D': {'a': 1.9366525983057512, 'b': 0.022838846131023077, 'c': 30},
+        # Placeholder for relined pipes, assuming similar properties to new plastic pipes
+        'Relined': {'a': 61.29814935110069, 'b': 0.043661643079612622, 'c': 30},
     },
     'Vatten': {
+        # Placeholder for relined pipes, assuming similar properties to new PE pipes
+        'Relined': {'a': 106.9383234418553, 'b': 0.062543758427977422, 'c': 50},
         'Gråjärn <1950': {'a': 55.490601649355284, 'b': 0.062332638228731335, 'c': 30},
         'Gråjärn >=1950': {'a': 55.490601649355284, 'b': 0.062332638228731335, 'c': 40},
         'Segjärn <1980': {'a': 55.490601649355284, 'b': 0.062332638228731335, 'c': 5},
@@ -48,6 +52,10 @@ def get_parameter_key(pipeline_type: str, material: str, year: int) -> str:
         return None
 
     mat_lower = material.lower().strip()
+
+    # Check for relining keywords first, as this should override the base material
+    if 'relin' in mat_lower or 'strumpa' in mat_lower:
+        return 'Relined'
 
     if pipeline_type == 'Vatten':
         if 'gråjärn' in mat_lower or mat_lower in ['gj', 'gg']:
