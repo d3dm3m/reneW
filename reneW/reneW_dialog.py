@@ -3,10 +3,9 @@ from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDialog
 from qgis.core import QgsMapLayerProxyModel
 
-# This loads your .ui file so that PyQt can populate your plugin with the elements from Qt Designer
+# This loads your .ui file
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'reneW_dialog_base.ui'))
-
 
 class ReneWDialog(QDialog, FORM_CLASS):
     def __init__(self, parent=None):
@@ -14,38 +13,76 @@ class ReneWDialog(QDialog, FORM_CLASS):
         super(ReneWDialog, self).__init__(parent)
         self.setupUi(self)
 
-        self.mMapLayerComboBox.setFilters(QgsMapLayerProxyModel.VectorLayer)
-        self.mMapLayerComboBox.layerChanged.connect(self.mFieldComboBox_material.setLayer)
-        self.mMapLayerComboBox.layerChanged.connect(self.mFieldComboBox_year.setLayer)
-        self.mMapLayerComboBox.layerChanged.connect(self.mFieldComboBox_dimension.setLayer)
-
-        # Connect checkbox to enable/disable spinbox
+        # --- Global Settings ---
         self.mCheckBoxEnableDimensionWeighting.toggled.connect(self.mSpinBoxDimensionFactor.setEnabled)
 
+        # --- Vatten Tab ---
+        self.mCheckVatten.toggled.connect(self.mGroupVatten.setEnabled)
+        self.mMapLayerComboVatten.setFilters(QgsMapLayerProxyModel.VectorLayer)
+        self.mMapLayerComboVatten.layerChanged.connect(self.mFieldComboMaterialVatten.setLayer)
+        self.mMapLayerComboVatten.layerChanged.connect(self.mFieldComboYearVatten.setLayer)
+        self.mMapLayerComboVatten.layerChanged.connect(self.mFieldComboDimensionVatten.setLayer)
+        self.mGroupVatten.setEnabled(False)
+
+        # --- Spillvatten Tab ---
+        self.mCheckSpillvatten.toggled.connect(self.mGroupSpillvatten.setEnabled)
+        self.mMapLayerComboSpillvatten.setFilters(QgsMapLayerProxyModel.VectorLayer)
+        self.mMapLayerComboSpillvatten.layerChanged.connect(self.mFieldComboMaterialSpillvatten.setLayer)
+        self.mMapLayerComboSpillvatten.layerChanged.connect(self.mFieldComboYearSpillvatten.setLayer)
+        self.mMapLayerComboSpillvatten.layerChanged.connect(self.mFieldComboDimensionSpillvatten.setLayer)
+        self.mGroupSpillvatten.setEnabled(False)
+
+        # --- Dagvatten Tab ---
+        self.mCheckDagvatten.toggled.connect(self.mGroupDagvatten.setEnabled)
+        self.mMapLayerComboDagvatten.setFilters(QgsMapLayerProxyModel.VectorLayer)
+        self.mMapLayerComboDagvatten.layerChanged.connect(self.mFieldComboMaterialDagvatten.setLayer)
+        self.mMapLayerComboDagvatten.layerChanged.connect(self.mFieldComboYearDagvatten.setLayer)
+        self.mMapLayerComboDagvatten.layerChanged.connect(self.mFieldComboDimensionDagvatten.setLayer)
+        self.mGroupDagvatten.setEnabled(False)
+
+    # --- Getter methods for global settings ---
     def useDimensionWeighting(self) -> bool:
-        """Returns True if dimension weighting is enabled."""
         return self.mCheckBoxEnableDimensionWeighting.isChecked()
 
     def dimensionFactor(self) -> float:
-        """Returns the value of the dimension weighting factor."""
         return self.mSpinBoxDimensionFactor.value()
 
-    def selectedLayer(self):
-        """Returns the selected layer."""
-        return self.mMapLayerComboBox.currentLayer()
+    # --- Getter for all selected configurations ---
+    def get_analysis_configs(self) -> list:
+        """
+        Returns a list of configurations for all layers selected for analysis.
+        Each configuration is a dictionary.
+        """
+        configs = []
 
-    def materialField(self):
-        """Returns the selected material field."""
-        return self.mFieldComboBox_material.currentField()
+        # Vatten
+        if self.mCheckVatten.isChecked() and self.mMapLayerComboVatten.currentLayer():
+            configs.append({
+                'type': 'Vatten',
+                'layer': self.mMapLayerComboVatten.currentLayer(),
+                'material_field': self.mFieldComboMaterialVatten.currentField(),
+                'year_field': self.mFieldComboYearVatten.currentField(),
+                'dimension_field': self.mFieldComboDimensionVatten.currentField()
+            })
 
-    def yearField(self):
-        """Returns the selected year field."""
-        return self.mFieldComboBox_year.currentField()
+        # Spillvatten
+        if self.mCheckSpillvatten.isChecked() and self.mMapLayerComboSpillvatten.currentLayer():
+            configs.append({
+                'type': 'Spillvatten',
+                'layer': self.mMapLayerComboSpillvatten.currentLayer(),
+                'material_field': self.mFieldComboMaterialSpillvatten.currentField(),
+                'year_field': self.mFieldComboYearSpillvatten.currentField(),
+                'dimension_field': self.mFieldComboDimensionSpillvatten.currentField()
+            })
 
-    def dimensionField(self):
-        """Returns the selected dimension field."""
-        return self.mFieldComboBox_dimension.currentField()
+        # Dagvatten
+        if self.mCheckDagvatten.isChecked() and self.mMapLayerComboDagvatten.currentLayer():
+            configs.append({
+                'type': 'Dagvatten',
+                'layer': self.mMapLayerComboDagvatten.currentLayer(),
+                'material_field': self.mFieldComboMaterialDagvatten.currentField(),
+                'year_field': self.mFieldComboYearDagvatten.currentField(),
+                'dimension_field': self.mFieldComboDimensionDagvatten.currentField()
+            })
 
-    def pipelineType(self) -> str:
-        """Returns the selected pipeline type."""
-        return self.mComboBoxPipeType.currentText()
+        return configs
