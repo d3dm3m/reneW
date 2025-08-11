@@ -1,7 +1,7 @@
 import os
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import QDialog
-from qgis.core import QgsMapLayerProxyModel
+from qgis.core import QgsMapLayerProxyModel, QgsProject
 
 # This loads your .ui file
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -107,3 +107,82 @@ class ReneWDialog(QDialog, FORM_CLASS):
     def getHotspotDistance(self) -> float:
         """Returns the buffer distance for hotspot analysis."""
         return self.mSpinBoxHotspotDistance.value()
+
+    def save_settings(self):
+        """Saves the dialog's settings to the current QGIS project."""
+        project = QgsProject.instance()
+
+        # Tab settings
+        project.writeEntry('reneW', 'vattenEnabled', self.mCheckVatten.isChecked())
+        if self.mMapLayerComboVatten.currentLayer():
+            project.writeEntry('reneW', 'vattenLayer', self.mMapLayerComboVatten.currentLayer().id())
+        project.writeEntry('reneW', 'vattenMaterialField', self.mFieldComboMaterialVatten.currentField())
+        project.writeEntry('reneW', 'vattenYearField', self.mFieldComboYearVatten.currentField())
+        project.writeEntry('reneW', 'vattenDimensionField', self.mFieldComboDimensionVatten.currentField())
+
+        project.writeEntry('reneW', 'spillvattenEnabled', self.mCheckSpillvatten.isChecked())
+        if self.mMapLayerComboSpillvatten.currentLayer():
+            project.writeEntry('reneW', 'spillvattenLayer', self.mMapLayerComboSpillvatten.currentLayer().id())
+        project.writeEntry('reneW', 'spillvattenMaterialField', self.mFieldComboMaterialSpillvatten.currentField())
+        project.writeEntry('reneW', 'spillvattenYearField', self.mFieldComboYearSpillvatten.currentField())
+        project.writeEntry('reneW', 'spillvattenDimensionField', self.mFieldComboDimensionSpillvatten.currentField())
+
+        project.writeEntry('reneW', 'dagvattenEnabled', self.mCheckDagvatten.isChecked())
+        if self.mMapLayerComboDagvatten.currentLayer():
+            project.writeEntry('reneW', 'dagvattenLayer', self.mMapLayerComboDagvatten.currentLayer().id())
+        project.writeEntry('reneW', 'dagvattenMaterialField', self.mFieldComboMaterialDagvatten.currentField())
+        project.writeEntry('reneW', 'dagvattenYearField', self.mFieldComboYearDagvatten.currentField())
+        project.writeEntry('reneW', 'dagvattenDimensionField', self.mFieldComboDimensionDagvatten.currentField())
+
+        # Global settings
+        project.writeEntry('reneW', 'dimensionWeightingEnabled', self.useDimensionWeighting())
+        project.writeEntry('reneW', 'dimensionFactor', self.dimensionFactor())
+
+        # Hotspot settings
+        project.writeEntry('reneW', 'hotspotEnabled', self.isHotspotAnalysisEnabled())
+        project.writeEntry('reneW', 'hotspotThreshold', self.getHotspotThreshold())
+        project.writeEntry('reneW', 'hotspotDistance', self.getHotspotDistance())
+
+    def load_settings(self):
+        """Loads the dialog's settings from the current QGIS project."""
+        project = QgsProject.instance()
+
+        # Helper to find a layer by ID and set it
+        def set_layer_if_exists(combo, layer_id):
+            if layer_id:
+                layer = QgsProject.instance().mapLayer(layer_id)
+                if layer:
+                    combo.setLayer(layer)
+
+        # Vatten
+        self.mCheckVatten.setChecked(project.readBoolEntry('reneW', 'vattenEnabled', False))
+        vatten_layer_id = project.readEntry('reneW', 'vattenLayer', '')
+        set_layer_if_exists(self.mMapLayerComboVatten, vatten_layer_id)
+        self.mFieldComboMaterialVatten.setField(project.readEntry('reneW', 'vattenMaterialField', ''))
+        self.mFieldComboYearVatten.setField(project.readEntry('reneW', 'vattenYearField', ''))
+        self.mFieldComboDimensionVatten.setField(project.readEntry('reneW', 'vattenDimensionField', ''))
+
+        # Spillvatten
+        self.mCheckSpillvatten.setChecked(project.readBoolEntry('reneW', 'spillvattenEnabled', False))
+        spillvatten_layer_id = project.readEntry('reneW', 'spillvattenLayer', '')
+        set_layer_if_exists(self.mMapLayerComboSpillvatten, spillvatten_layer_id)
+        self.mFieldComboMaterialSpillvatten.setField(project.readEntry('reneW', 'spillvattenMaterialField', ''))
+        self.mFieldComboYearSpillvatten.setField(project.readEntry('reneW', 'spillvattenYearField', ''))
+        self.mFieldComboDimensionSpillvatten.setField(project.readEntry('reneW', 'spillvattenDimensionField', ''))
+
+        # Dagvatten
+        self.mCheckDagvatten.setChecked(project.readBoolEntry('reneW', 'dagvattenEnabled', False))
+        dagvatten_layer_id = project.readEntry('reneW', 'dagvattenLayer', '')
+        set_layer_if_exists(self.mMapLayerComboDagvatten, dagvatten_layer_id)
+        self.mFieldComboMaterialDagvatten.setField(project.readEntry('reneW', 'dagvattenMaterialField', ''))
+        self.mFieldComboYearDagvatten.setField(project.readEntry('reneW', 'dagvattenYearField', ''))
+        self.mFieldComboDimensionDagvatten.setField(project.readEntry('reneW', 'dagvattenDimensionField', ''))
+
+        # Global settings
+        self.mCheckBoxEnableDimensionWeighting.setChecked(project.readBoolEntry('reneW', 'dimensionWeightingEnabled', False))
+        self.mSpinBoxDimensionFactor.setValue(project.readDoubleEntry('reneW', 'dimensionFactor', 0.001))
+
+        # Hotspot settings
+        self.mCheckHotspot.setChecked(project.readBoolEntry('reneW', 'hotspotEnabled', False))
+        self.mSpinBoxHotspotThreshold.setValue(project.readDoubleEntry('reneW', 'hotspotThreshold', 0.5))
+        self.mSpinBoxHotspotDistance.setValue(project.readDoubleEntry('reneW', 'hotspotDistance', 5.0))

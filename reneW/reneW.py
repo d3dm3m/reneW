@@ -89,10 +89,16 @@ class ReneW:
         if self.dlg is None:
             self.dlg = ReneWDialog()
 
+        # Load last used settings
+        self.dlg.load_settings()
+
         self.dlg.show()
         result = self.dlg.exec_()
 
         if result:
+            # Save settings on successful run
+            self.dlg.save_settings()
+
             analysis_configs = self.dlg.get_analysis_configs()
             use_dimension_weighting = self.dlg.useDimensionWeighting()
             dimension_factor = self.dlg.dimensionFactor()
