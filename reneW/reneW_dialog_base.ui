@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>500</width>
-    <height>520</height>
+    <height>600</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -60,7 +60,7 @@
           <item row="2" column="0">
            <widget class="QLabel" name="label_4">
             <property name="text">
-             <string>Årtalsfält:</string>
+             <string>Anläggningsår:</string>
             </property>
            </widget>
           </item>
@@ -76,6 +76,34 @@
           </item>
           <item row="3" column="1">
            <widget class="QgsFieldComboBox" name="mFieldComboDimensionVatten"/>
+          </item>
+          <item row="4" column="0">
+           <widget class="QLabel" name="label_15">
+            <property name="text">
+             <string>Renoveringsår (valfritt):</string>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="1">
+           <widget class="QgsFieldComboBox" name="mFieldComboRenoYearVatten">
+            <property name="allowEmptyFieldName">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item row="5" column="0">
+           <widget class="QLabel" name="label_16">
+            <property name="text">
+             <string>Renoveringsmetod (valfritt):</string>
+            </property>
+           </widget>
+          </item>
+          <item row="5" column="1">
+           <widget class="QgsFieldComboBox" name="mFieldComboRenoMethodVatten">
+            <property name="allowEmptyFieldName">
+             <bool>true</bool>
+            </property>
+           </widget>
           </item>
          </layout>
         </widget>
@@ -123,7 +151,7 @@
           <item row="2" column="0">
            <widget class="QLabel" name="label_8">
             <property name="text">
-             <string>Årtalsfält:</string>
+             <string>Anläggningsår:</string>
             </property>
            </widget>
           </item>
@@ -139,6 +167,34 @@
           </item>
           <item row="3" column="1">
            <widget class="QgsFieldComboBox" name="mFieldComboDimensionSpillvatten"/>
+          </item>
+          <item row="4" column="0">
+           <widget class="QLabel" name="label_17">
+            <property name="text">
+             <string>Renoveringsår (valfritt):</string>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="1">
+           <widget class="QgsFieldComboBox" name="mFieldComboRenoYearSpillvatten">
+            <property name="allowEmptyFieldName">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item row="5" column="0">
+           <widget class="QLabel" name="label_18">
+            <property name="text">
+             <string>Renoveringsmetod (valfritt):</string>
+            </property>
+           </widget>
+          </item>
+          <item row="5" column="1">
+           <widget class="QgsFieldComboBox" name="mFieldComboRenoMethodSpillvatten">
+            <property name="allowEmptyFieldName">
+             <bool>true</bool>
+            </property>
+           </widget>
           </item>
          </layout>
         </widget>
@@ -186,7 +242,7 @@
           <item row="2" column="0">
            <widget class="QLabel" name="label_12">
             <property name="text">
-             <string>Årtalsfält:</string>
+             <string>Anläggningsår:</string>
             </property>
            </widget>
           </item>
@@ -202,6 +258,34 @@
           </item>
           <item row="3" column="1">
            <widget class="QgsFieldComboBox" name="mFieldComboDimensionDagvatten"/>
+          </item>
+          <item row="4" column="0">
+           <widget class="QLabel" name="label_19">
+            <property name="text">
+             <string>Renoveringsår (valfritt):</string>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="1">
+           <widget class="QgsFieldComboBox" name="mFieldComboRenoYearDagvatten">
+            <property name="allowEmptyFieldName">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item row="5" column="0">
+           <widget class="QLabel" name="label_20">
+            <property name="text">
+             <string>Renoveringsmetod (valfritt):</string>
+            </property>
+           </widget>
+          </item>
+          <item row="5" column="1">
+           <widget class="QgsFieldComboBox" name="mFieldComboRenoMethodDagvatten">
+            <property name="allowEmptyFieldName">
+             <bool>true</bool>
+            </property>
+           </widget>
           </item>
          </layout>
         </widget>

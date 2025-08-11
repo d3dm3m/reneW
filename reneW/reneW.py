@@ -132,10 +132,13 @@ class ReneW:
                 material_idx = fields.indexFromName(config['material_field'])
                 year_idx = fields.indexFromName(config['year_field'])
                 dimension_idx = fields.indexFromName(config['dimension_field'])
+                reno_year_idx = fields.indexFromName(config['reno_year_field'])
+                reno_method_idx = fields.indexFromName(config['reno_method_field'])
                 output_idx = fields.indexFromName(output_field_name)
 
+                # Only the base fields are strictly required
                 if any(idx == -1 for idx in [material_idx, year_idx, dimension_idx]):
-                    self.iface.messageBar().pushMessage("Error", f"Fält kunde inte hittas i lagret '{layer.name()}'. Hoppar över.", level=1)
+                    self.iface.messageBar().pushMessage("Error", f"Något av grundfälten (material, anläggningsår, dimension) kunde inte hittas i lagret '{layer.name()}'. Hoppar över.", level=1)
                     continue
 
                 layer.startEditing()
@@ -148,12 +151,26 @@ class ReneW:
                     except (ValueError, TypeError, AttributeError):
                         installation_year = current_year
 
+                    # Default age is based on installation year
+                    age = max(0, current_year - installation_year)
+
+                    # Check for renovation data and override age if applicable
+                    if reno_method_idx != -1 and reno_year_idx != -1:
+                        reno_method = attrs[reno_method_idx]
+                        if reno_method and isinstance(reno_method, str):
+                            # If method is a form of relining, use the renovation year
+                            if 'infodring' in reno_method.lower() or 'strumpa' in reno_method.lower():
+                                try:
+                                    reno_year = int(attrs[reno_year_idx])
+                                    # Override age if renovation year is valid
+                                    age = max(0, current_year - reno_year)
+                                except (ValueError, TypeError, AttributeError):
+                                    pass # Keep original age
+
                     try:
                         dimension = float(attrs[dimension_idx])
                     except (ValueError, TypeError, AttributeError):
                         dimension = 0.0
-
-                    age = max(0, current_year - installation_year)
 
                     renewal_need = calculation_logic.calculate_renewal_need(
                         pipeline_type=calc_pipeline_type,

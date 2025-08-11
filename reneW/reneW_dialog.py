@@ -22,6 +22,8 @@ class ReneWDialog(QDialog, FORM_CLASS):
         self.mMapLayerComboVatten.layerChanged.connect(self.mFieldComboMaterialVatten.setLayer)
         self.mMapLayerComboVatten.layerChanged.connect(self.mFieldComboYearVatten.setLayer)
         self.mMapLayerComboVatten.layerChanged.connect(self.mFieldComboDimensionVatten.setLayer)
+        self.mMapLayerComboVatten.layerChanged.connect(self.mFieldComboRenoYearVatten.setLayer)
+        self.mMapLayerComboVatten.layerChanged.connect(self.mFieldComboRenoMethodVatten.setLayer)
         self.mGroupVatten.setEnabled(False)
 
         # --- Spillvatten Tab ---
@@ -30,6 +32,8 @@ class ReneWDialog(QDialog, FORM_CLASS):
         self.mMapLayerComboSpillvatten.layerChanged.connect(self.mFieldComboMaterialSpillvatten.setLayer)
         self.mMapLayerComboSpillvatten.layerChanged.connect(self.mFieldComboYearSpillvatten.setLayer)
         self.mMapLayerComboSpillvatten.layerChanged.connect(self.mFieldComboDimensionSpillvatten.setLayer)
+        self.mMapLayerComboSpillvatten.layerChanged.connect(self.mFieldComboRenoYearSpillvatten.setLayer)
+        self.mMapLayerComboSpillvatten.layerChanged.connect(self.mFieldComboRenoMethodSpillvatten.setLayer)
         self.mGroupSpillvatten.setEnabled(False)
 
         # --- Dagvatten Tab ---
@@ -38,6 +42,8 @@ class ReneWDialog(QDialog, FORM_CLASS):
         self.mMapLayerComboDagvatten.layerChanged.connect(self.mFieldComboMaterialDagvatten.setLayer)
         self.mMapLayerComboDagvatten.layerChanged.connect(self.mFieldComboYearDagvatten.setLayer)
         self.mMapLayerComboDagvatten.layerChanged.connect(self.mFieldComboDimensionDagvatten.setLayer)
+        self.mMapLayerComboDagvatten.layerChanged.connect(self.mFieldComboRenoYearDagvatten.setLayer)
+        self.mMapLayerComboDagvatten.layerChanged.connect(self.mFieldComboRenoMethodDagvatten.setLayer)
         self.mGroupDagvatten.setEnabled(False)
 
         # --- Hotspot Analysis Settings ---
@@ -70,7 +76,9 @@ class ReneWDialog(QDialog, FORM_CLASS):
                 'layer': self.mMapLayerComboVatten.currentLayer(),
                 'material_field': self.mFieldComboMaterialVatten.currentField(),
                 'year_field': self.mFieldComboYearVatten.currentField(),
-                'dimension_field': self.mFieldComboDimensionVatten.currentField()
+                'dimension_field': self.mFieldComboDimensionVatten.currentField(),
+                'reno_year_field': self.mFieldComboRenoYearVatten.currentField(),
+                'reno_method_field': self.mFieldComboRenoMethodVatten.currentField()
             })
 
         # Spillvatten
@@ -80,7 +88,9 @@ class ReneWDialog(QDialog, FORM_CLASS):
                 'layer': self.mMapLayerComboSpillvatten.currentLayer(),
                 'material_field': self.mFieldComboMaterialSpillvatten.currentField(),
                 'year_field': self.mFieldComboYearSpillvatten.currentField(),
-                'dimension_field': self.mFieldComboDimensionSpillvatten.currentField()
+                'dimension_field': self.mFieldComboDimensionSpillvatten.currentField(),
+                'reno_year_field': self.mFieldComboRenoYearSpillvatten.currentField(),
+                'reno_method_field': self.mFieldComboRenoMethodSpillvatten.currentField()
             })
 
         # Dagvatten
@@ -90,7 +100,9 @@ class ReneWDialog(QDialog, FORM_CLASS):
                 'layer': self.mMapLayerComboDagvatten.currentLayer(),
                 'material_field': self.mFieldComboMaterialDagvatten.currentField(),
                 'year_field': self.mFieldComboYearDagvatten.currentField(),
-                'dimension_field': self.mFieldComboDimensionDagvatten.currentField()
+                'dimension_field': self.mFieldComboDimensionDagvatten.currentField(),
+                'reno_year_field': self.mFieldComboRenoYearDagvatten.currentField(),
+                'reno_method_field': self.mFieldComboRenoMethodDagvatten.currentField()
             })
 
         return configs
@@ -119,6 +131,8 @@ class ReneWDialog(QDialog, FORM_CLASS):
         project.writeEntry('reneW', 'vattenMaterialField', self.mFieldComboMaterialVatten.currentField())
         project.writeEntry('reneW', 'vattenYearField', self.mFieldComboYearVatten.currentField())
         project.writeEntry('reneW', 'vattenDimensionField', self.mFieldComboDimensionVatten.currentField())
+        project.writeEntry('reneW', 'vattenRenoYearField', self.mFieldComboRenoYearVatten.currentField())
+        project.writeEntry('reneW', 'vattenRenoMethodField', self.mFieldComboRenoMethodVatten.currentField())
 
         project.writeEntry('reneW', 'spillvattenEnabled', self.mCheckSpillvatten.isChecked())
         if self.mMapLayerComboSpillvatten.currentLayer():
@@ -126,6 +140,8 @@ class ReneWDialog(QDialog, FORM_CLASS):
         project.writeEntry('reneW', 'spillvattenMaterialField', self.mFieldComboMaterialSpillvatten.currentField())
         project.writeEntry('reneW', 'spillvattenYearField', self.mFieldComboYearSpillvatten.currentField())
         project.writeEntry('reneW', 'spillvattenDimensionField', self.mFieldComboDimensionSpillvatten.currentField())
+        project.writeEntry('reneW', 'spillvattenRenoYearField', self.mFieldComboRenoYearSpillvatten.currentField())
+        project.writeEntry('reneW', 'spillvattenRenoMethodField', self.mFieldComboRenoMethodSpillvatten.currentField())
 
         project.writeEntry('reneW', 'dagvattenEnabled', self.mCheckDagvatten.isChecked())
         if self.mMapLayerComboDagvatten.currentLayer():
@@ -133,6 +149,8 @@ class ReneWDialog(QDialog, FORM_CLASS):
         project.writeEntry('reneW', 'dagvattenMaterialField', self.mFieldComboMaterialDagvatten.currentField())
         project.writeEntry('reneW', 'dagvattenYearField', self.mFieldComboYearDagvatten.currentField())
         project.writeEntry('reneW', 'dagvattenDimensionField', self.mFieldComboDimensionDagvatten.currentField())
+        project.writeEntry('reneW', 'dagvattenRenoYearField', self.mFieldComboRenoYearDagvatten.currentField())
+        project.writeEntry('reneW', 'dagvattenRenoMethodField', self.mFieldComboRenoMethodDagvatten.currentField())
 
         # Global settings
         project.writeEntry('reneW', 'dimensionWeightingEnabled', self.useDimensionWeighting())
@@ -161,6 +179,8 @@ class ReneWDialog(QDialog, FORM_CLASS):
         self.mFieldComboMaterialVatten.setField(project.readEntry('reneW', 'vattenMaterialField', ''))
         self.mFieldComboYearVatten.setField(project.readEntry('reneW', 'vattenYearField', ''))
         self.mFieldComboDimensionVatten.setField(project.readEntry('reneW', 'vattenDimensionField', ''))
+        self.mFieldComboRenoYearVatten.setField(project.readEntry('reneW', 'vattenRenoYearField', ''))
+        self.mFieldComboRenoMethodVatten.setField(project.readEntry('reneW', 'vattenRenoMethodField', ''))
 
         # Spillvatten
         self.mCheckSpillvatten.setChecked(project.readBoolEntry('reneW', 'spillvattenEnabled', False))
@@ -169,6 +189,8 @@ class ReneWDialog(QDialog, FORM_CLASS):
         self.mFieldComboMaterialSpillvatten.setField(project.readEntry('reneW', 'spillvattenMaterialField', ''))
         self.mFieldComboYearSpillvatten.setField(project.readEntry('reneW', 'spillvattenYearField', ''))
         self.mFieldComboDimensionSpillvatten.setField(project.readEntry('reneW', 'spillvattenDimensionField', ''))
+        self.mFieldComboRenoYearSpillvatten.setField(project.readEntry('reneW', 'spillvattenRenoYearField', ''))
+        self.mFieldComboRenoMethodSpillvatten.setField(project.readEntry('reneW', 'spillvattenRenoMethodField', ''))
 
         # Dagvatten
         self.mCheckDagvatten.setChecked(project.readBoolEntry('reneW', 'dagvattenEnabled', False))
@@ -177,6 +199,8 @@ class ReneWDialog(QDialog, FORM_CLASS):
         self.mFieldComboMaterialDagvatten.setField(project.readEntry('reneW', 'dagvattenMaterialField', ''))
         self.mFieldComboYearDagvatten.setField(project.readEntry('reneW', 'dagvattenYearField', ''))
         self.mFieldComboDimensionDagvatten.setField(project.readEntry('reneW', 'dagvattenDimensionField', ''))
+        self.mFieldComboRenoYearDagvatten.setField(project.readEntry('reneW', 'dagvattenRenoYearField', ''))
+        self.mFieldComboRenoMethodDagvatten.setField(project.readEntry('reneW', 'dagvattenRenoMethodField', ''))
 
         # Global settings
         self.mCheckBoxEnableDimensionWeighting.setChecked(project.readBoolEntry('reneW', 'dimensionWeightingEnabled', False))
