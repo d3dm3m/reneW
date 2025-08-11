@@ -1,0 +1,12 @@
+[general]
+name=reneW
+qgisMinimumVersion=3.4
+description=A renewal addon for utility pipes.
+version=0.1
+author=Jules
+email=jules@example.com
+
+[plugin-dependencies]
+# List of plugins that are dependencies for this plugin.
+# Format: plugin_name,minimum_version (one per line)
+# Example: another_plugin,1.5
