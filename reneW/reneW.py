@@ -9,6 +9,7 @@ from qgis.core import (QgsProject, QgsVectorLayer, QgsField, QgsGeometry,
 
 # Import the code for the dialog and the calculation logic
 from .reneW_dialog import ReneWDialog
+from .results_dialog import ResultsDialog
 from . import calculation_logic
 
 class ReneW:
@@ -28,6 +29,17 @@ class ReneW:
         self.toolbar = self.iface.addToolBar(u'reneW')
         self.toolbar.setObjectName(u'reneW')
         self.dlg = None
+        self.results_dialog = None
+
+    def _handle_zoom_to_feature(self, layer_id, feature_id):
+        """Zooms the map canvas to a specific feature."""
+        layer = QgsProject.instance().mapLayer(layer_id)
+        if not layer:
+            return
+
+        layer.selectByIds([feature_id])
+        self.iface.mapCanvas().zoomToSelected(layer)
+        self.iface.mapCanvas().refresh()
 
     def add_action(
         self,
@@ -90,6 +102,7 @@ class ReneW:
                 return
 
             processed_layers = 0
+            high_risk_results = []
             current_year = datetime.now().year
 
             for config in analysis_configs:
@@ -148,6 +161,18 @@ class ReneW:
 
                     layer.changeAttributeValue(feature.id(), output_idx, renewal_need)
 
+                    # Collect high-risk results for the table
+                    # Using a threshold of 0.5 as a default for "high-risk"
+                    if renewal_need >= 0.5:
+                        high_risk_results.append({
+                            'layer_name': layer.name(),
+                            'layer_id': layer.id(),
+                            'feature_id': feature.id(),
+                            'material': material,
+                            'age': age,
+                            'renewal_need': renewal_need
+                        })
+
                 if layer.commitChanges():
                     self.iface.messageBar().pushMessage("Success", f"Beräkning klar för lagret '{layer.name()}'.", level=0, duration=4)
                     processed_layers += 1
@@ -158,6 +183,16 @@ class ReneW:
             if processed_layers > 0:
                 self.iface.messageBar().pushMessage("Info", f"Analys slutförd för {processed_layers} lager.", level=0, duration=5)
                 self.iface.mapCanvas().refresh()
+
+            # --- Show results dialog if there are high-risk items ---
+            if high_risk_results:
+                # Sort results by renewal need, descending
+                high_risk_results.sort(key=lambda x: x['renewal_need'], reverse=True)
+
+                self.results_dialog = ResultsDialog(parent=self.iface.mainWindow())
+                self.results_dialog.zoom_to_feature_signal.connect(self._handle_zoom_to_feature)
+                self.results_dialog.populate_table(high_risk_results)
+                self.results_dialog.show()
 
             # --- Run hotspot analysis if enabled ---
             if self.dlg.isHotspotAnalysisEnabled() and analysis_configs:
