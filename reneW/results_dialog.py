@@ -1,8 +1,10 @@
 import os
 import csv
 from qgis.PyQt import uic
-from qgis.PyQt.QtCore import pyqtSignal
+from qgis.PyQt.QtCore import pyqtSignal, QRectF
 from qgis.PyQt.QtWidgets import QDialog, QFileDialog, QTableWidgetItem
+from qgis.core import (QgsProject, QgsPrintLayout, QgsLayoutItemLabel,
+                     QgsLayoutExporter, QgsUnitTypes)
 
 # This loads your .ui file
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -13,14 +15,16 @@ class ResultsDialog(QDialog, FORM_CLASS):
     # It will carry the layer_id (str) and feature_id (int)
     zoom_to_feature_signal = pyqtSignal(str, int)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, hotspot_count=0):
         """Constructor."""
         super(ResultsDialog, self).__init__(parent)
         self.setupUi(self)
 
         self._results_data = []
+        self._hotspot_count = hotspot_count
         self.mBtnZoomTo.clicked.connect(self._zoom_to_selected)
         self.mBtnExport.clicked.connect(self._export_to_csv)
+        self.mBtnExportPdf.clicked.connect(self._export_to_pdf)
 
     def populate_table(self, results_data: list):
         """Populates the table with results."""
@@ -37,16 +41,13 @@ class ResultsDialog(QDialog, FORM_CLASS):
             self.mTableWidget.setItem(row, 2, QTableWidgetItem(item.get('material', '')))
             self.mTableWidget.setItem(row, 3, QTableWidgetItem(str(item.get('age', ''))))
 
-            # Format renewal need to a few decimals and make it sortable as a number
             renewal_need_item = QTableWidgetItem()
             renewal_need_item.setData(0, item.get('renewal_need', 0.0))
             self.mTableWidget.setItem(row, 4, renewal_need_item)
 
-            # Store internal IDs in hidden columns
             self.mTableWidget.setItem(row, 5, QTableWidgetItem(item.get('layer_id', '')))
             self.mTableWidget.setItem(row, 6, QTableWidgetItem(str(item.get('feature_id', ''))))
 
-        # Hide the ID columns
         self.mTableWidget.setColumnHidden(5, True)
         self.mTableWidget.setColumnHidden(6, True)
         self.mTableWidget.resizeColumnsToContents()
@@ -78,18 +79,64 @@ class ResultsDialog(QDialog, FORM_CLASS):
         try:
             with open(path, 'w', newline='', encoding='utf-8-sig') as f:
                 writer = csv.writer(f, delimiter=';')
-
-                # Write header
                 header = [self.mTableWidget.horizontalHeaderItem(i).text() for i in range(self.mTableWidget.columnCount()) if not self.mTableWidget.isColumnHidden(i)]
                 writer.writerow(header)
-
-                # Write data
                 for row in range(self.mTableWidget.rowCount()):
-                    row_data = []
-                    for col in range(self.mTableWidget.columnCount()):
-                        if not self.mTableWidget.isColumnHidden(col):
-                            row_data.append(self.mTableWidget.item(row, col).text())
+                    row_data = [self.mTableWidget.item(row, col).text() for col in range(self.mTableWidget.columnCount()) if not self.mTableWidget.isColumnHidden(col)]
                     writer.writerow(row_data)
         except Exception as e:
-            # In a real app, show a QgsMessageBar message
             print(f"Could not export to CSV: {e}")
+
+    def _export_to_pdf(self):
+        """Exports a simple summary report to a PDF file."""
+        path, _ = QFileDialog.getSaveFileName(self, "Spara PDF-rapport", "", "PDF-filer (*.pdf)")
+        if not path:
+            return
+
+        project = QgsProject.instance()
+        layout_name = "reneW Report"
+        layout_manager = project.layoutManager()
+
+        # Remove layout if it already exists to avoid duplicates
+        if layout_manager.layoutByName(layout_name):
+            layout_manager.removeLayout(layout_manager.layoutByName(layout_name))
+
+        layout = QgsPrintLayout(project)
+        layout.initializeDefaults()
+        layout.setName(layout_name)
+
+        # Add Title
+        title = QgsLayoutItemLabel(layout)
+        title.setText("Sammanfattande Rapport - reneW Analys")
+        title.setFont(self.font()) # Use dialog's font
+        title.setFontSize(18)
+        title.adjustSizeToText()
+        layout.addLayoutItem(title)
+        title.attemptMove(QRectF(10, 10, 200, 20))
+
+        # Add Summary Text
+        summary_text = f"""
+        <b>Sammanfattning:</b><br>
+        <ul>
+        <li>Antal högriskledningar (behov > 0.5): {len(self._results_data)} st</li>
+        <li>Antal identifierade hotspots: {self._hotspot_count} st</li>
+        </ul>
+        """
+        summary = QgsLayoutItemLabel(layout)
+        summary.setText(summary_text)
+        summary.setFont(self.font())
+        summary.setFontSize(12)
+        layout.addLayoutItem(summary)
+        summary.attemptMove(QRectF(10, 40, 200, 50))
+
+        # Export
+        exporter = QgsLayoutExporter(layout)
+        settings = QgsLayoutExporter.PdfExportSettings()
+        exporter.exportToPdf(path, settings)
+
+        # Clean up the temporary layout
+        layout_manager.addLayout(layout) # needs to be added to be removed
+        layout_manager.removeLayout(layout)
+
+        # Optionally, notify the user
+        print(f"Rapport sparad till {path}")

@@ -53,6 +53,13 @@
       </widget>
      </item>
      <item>
+      <widget class="QPushButton" name="mBtnExportPdf">
+       <property name="text">
+        <string>Skapa PDF-rapport</string>
+       </property>
+      </widget>
+     </item>
+     <item>
       <widget class="QPushButton" name="mBtnExport">
        <property name="text">
         <string>Exportera till CSV</string>

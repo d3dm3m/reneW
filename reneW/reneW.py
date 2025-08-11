@@ -207,17 +207,8 @@ class ReneW:
                 self.iface.messageBar().pushMessage("Info", f"Analys slutförd för {processed_layers} lager.", level=0, duration=5)
                 self.iface.mapCanvas().refresh()
 
-            # --- Show results dialog if there are high-risk items ---
-            if high_risk_results:
-                # Sort results by renewal need, descending
-                high_risk_results.sort(key=lambda x: x['renewal_need'], reverse=True)
-
-                self.results_dialog = ResultsDialog(parent=self.iface.mainWindow())
-                self.results_dialog.zoom_to_feature_signal.connect(self._handle_zoom_to_feature)
-                self.results_dialog.populate_table(high_risk_results)
-                self.results_dialog.show()
-
             # --- Run hotspot analysis if enabled ---
+            hotspot_count = 0
             if self.dlg.isHotspotAnalysisEnabled() and analysis_configs:
                 hotspot_threshold = self.dlg.getHotspotThreshold()
                 hotspot_distance = self.dlg.getHotspotDistance()
@@ -225,9 +216,23 @@ class ReneW:
                 hotspot_geom = self._run_hotspot_analysis(analysis_configs, hotspot_threshold, hotspot_distance)
 
                 if hotspot_geom:
+                    if hotspot_geom.isMultipart():
+                        hotspot_count = len(hotspot_geom.asMultiPolygon())
+                    else:
+                        hotspot_count = 1
                     # Use the CRS of the first analyzed layer for the new hotspot layer
                     first_layer_crs = analysis_configs[0]['layer'].crs()
                     self._create_hotspot_layer(hotspot_geom, first_layer_crs)
+
+            # --- Show results dialog if there are high-risk items ---
+            if high_risk_results:
+                # Sort results by renewal need, descending
+                high_risk_results.sort(key=lambda x: x['renewal_need'], reverse=True)
+
+                self.results_dialog = ResultsDialog(parent=self.iface.mainWindow(), hotspot_count=hotspot_count)
+                self.results_dialog.zoom_to_feature_signal.connect(self._handle_zoom_to_feature)
+                self.results_dialog.populate_table(high_risk_results)
+                self.results_dialog.show()
 
     def _run_hotspot_analysis(self, analysis_configs, threshold, distance):
         self.iface.messageBar().pushMessage("Info", "Startar hotspot-analys...", level=0, duration=3)
