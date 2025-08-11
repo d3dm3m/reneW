@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>450</width>
-    <height>250</height>
+    <height>320</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -27,34 +27,82 @@
       <widget class="QgsMapLayerComboBox" name="mMapLayerComboBox"/>
      </item>
      <item row="1" column="0">
+      <widget class="QLabel" name="label_pipe_type">
+       <property name="text">
+        <string>Välj ledningstyp:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="1">
+      <widget class="QComboBox" name="mComboBoxPipeType">
+       <item>
+        <property name="text">
+         <string>Vatten</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Avlopp</string>
+        </property>
+       </item>
+      </widget>
+     </item>
+     <item row="2" column="0">
       <widget class="QLabel" name="label_material">
        <property name="text">
         <string>Fält för material:</string>
        </property>
       </widget>
      </item>
-     <item row="1" column="1">
+     <item row="2" column="1">
       <widget class="QgsFieldComboBox" name="mFieldComboBox_material"/>
      </item>
-     <item row="2" column="0">
+     <item row="3" column="0">
       <widget class="QLabel" name="label_year">
        <property name="text">
         <string>Fält för årtal:</string>
        </property>
       </widget>
      </item>
-     <item row="2" column="1">
+     <item row="3" column="1">
       <widget class="QgsFieldComboBox" name="mFieldComboBox_year"/>
      </item>
-     <item row="3" column="0">
+     <item row="4" column="0">
       <widget class="QLabel" name="label_dimension">
        <property name="text">
         <string>Fält för dimension:</string>
        </property>
       </widget>
      </item>
-     <item row="3" column="1">
+     <item row="4" column="1">
       <widget class="QgsFieldComboBox" name="mFieldComboBox_dimension"/>
+     </item>
+     <item row="5" column="0" colspan="2">
+      <layout class="QHBoxLayout" name="horizontalLayout">
+       <item>
+        <widget class="QCheckBox" name="mCheckBoxEnableDimensionWeighting">
+         <property name="text">
+          <string>Använd dimensionsviktning (faktor):</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QDoubleSpinBox" name="mSpinBoxDimensionFactor">
+         <property name="enabled">
+          <bool>false</bool>
+         </property>
+         <property name="decimals">
+          <number>4</number>
+         </property>
+         <property name="singleStep">
+          <double>0.0001</double>
+         </property>
+         <property name="value">
+          <double>0.0010</double>
+         </property>
+        </widget>
+       </item>
+      </layout>
      </item>
     </layout>
    </item>

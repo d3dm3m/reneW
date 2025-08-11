@@ -19,6 +19,17 @@ class ReneWDialog(QDialog, FORM_CLASS):
         self.mMapLayerComboBox.layerChanged.connect(self.mFieldComboBox_year.setLayer)
         self.mMapLayerComboBox.layerChanged.connect(self.mFieldComboBox_dimension.setLayer)
 
+        # Connect checkbox to enable/disable spinbox
+        self.mCheckBoxEnableDimensionWeighting.toggled.connect(self.mSpinBoxDimensionFactor.setEnabled)
+
+    def useDimensionWeighting(self) -> bool:
+        """Returns True if dimension weighting is enabled."""
+        return self.mCheckBoxEnableDimensionWeighting.isChecked()
+
+    def dimensionFactor(self) -> float:
+        """Returns the value of the dimension weighting factor."""
+        return self.mSpinBoxDimensionFactor.value()
+
     def selectedLayer(self):
         """Returns the selected layer."""
         return self.mMapLayerComboBox.currentLayer()
@@ -34,3 +45,7 @@ class ReneWDialog(QDialog, FORM_CLASS):
     def dimensionField(self):
         """Returns the selected dimension field."""
         return self.mFieldComboBox_dimension.currentField()
+
+    def pipelineType(self) -> str:
+        """Returns the selected pipeline type."""
+        return self.mComboBoxPipeType.currentText()
