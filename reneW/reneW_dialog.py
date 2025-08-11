@@ -40,6 +40,14 @@ class ReneWDialog(QDialog, FORM_CLASS):
         self.mMapLayerComboDagvatten.layerChanged.connect(self.mFieldComboDimensionDagvatten.setLayer)
         self.mGroupDagvatten.setEnabled(False)
 
+        # --- Hotspot Analysis Settings ---
+        # The groupbox itself is not checkable, so we connect the checkbox to the controls inside
+        self.mCheckHotspot.toggled.connect(self.mSpinBoxHotspotThreshold.setEnabled)
+        self.mCheckHotspot.toggled.connect(self.mSpinBoxHotspotDistance.setEnabled)
+        self.mSpinBoxHotspotThreshold.setEnabled(False)
+        self.mSpinBoxHotspotDistance.setEnabled(False)
+
+
     # --- Getter methods for global settings ---
     def useDimensionWeighting(self) -> bool:
         return self.mCheckBoxEnableDimensionWeighting.isChecked()
@@ -86,3 +94,16 @@ class ReneWDialog(QDialog, FORM_CLASS):
             })
 
         return configs
+
+    # --- Getter methods for hotspot settings ---
+    def isHotspotAnalysisEnabled(self) -> bool:
+        """Returns True if hotspot analysis is enabled."""
+        return self.mCheckHotspot.isChecked()
+
+    def getHotspotThreshold(self) -> float:
+        """Returns the renewal need threshold for hotspot analysis."""
+        return self.mSpinBoxHotspotThreshold.value()
+
+    def getHotspotDistance(self) -> float:
+        """Returns the buffer distance for hotspot analysis."""
+        return self.mSpinBoxHotspotDistance.value()

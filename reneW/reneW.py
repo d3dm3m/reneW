@@ -2,9 +2,10 @@ import os
 from datetime import datetime
 
 from qgis.PyQt.QtWidgets import QAction
-from qgis.PyQt.QtGui import QIcon
+from qgis.PyQt.QtGui import QIcon, QColor
 from qgis.PyQt.QtCore import QVariant
-from qgis.core import QgsProject, QgsVectorLayer, QgsField
+from qgis.core import (QgsProject, QgsVectorLayer, QgsField, QgsGeometry,
+                     QgsFeature, QgsFillSymbol, QgsSimpleFill, QgsBlurEffect)
 
 # Import the code for the dialog and the calculation logic
 from .reneW_dialog import ReneWDialog
@@ -157,3 +158,110 @@ class ReneW:
             if processed_layers > 0:
                 self.iface.messageBar().pushMessage("Info", f"Analys slutförd för {processed_layers} lager.", level=0, duration=5)
                 self.iface.mapCanvas().refresh()
+
+            # --- Run hotspot analysis if enabled ---
+            if self.dlg.isHotspotAnalysisEnabled() and analysis_configs:
+                hotspot_threshold = self.dlg.getHotspotThreshold()
+                hotspot_distance = self.dlg.getHotspotDistance()
+
+                hotspot_geom = self._run_hotspot_analysis(analysis_configs, hotspot_threshold, hotspot_distance)
+
+                if hotspot_geom:
+                    # Use the CRS of the first analyzed layer for the new hotspot layer
+                    first_layer_crs = analysis_configs[0]['layer'].crs()
+                    self._create_hotspot_layer(hotspot_geom, first_layer_crs)
+
+    def _run_hotspot_analysis(self, analysis_configs, threshold, distance):
+        self.iface.messageBar().pushMessage("Info", "Startar hotspot-analys...", level=0, duration=3)
+
+        high_risk_features = {'Vatten': [], 'Spillvatten': [], 'Dagvatten': []}
+
+        # 1. Filter high-risk features
+        for config in analysis_configs:
+            layer = config['layer']
+            layer_type = config['type']
+
+            field_name = 'fornyelsebehov'
+            if layer.fields().indexFromName(field_name) == -1:
+                continue
+
+            for feature in layer.getFeatures():
+                if feature[field_name] is not None and feature[field_name] >= threshold:
+                    high_risk_features[layer_type].append(feature.geometry())
+
+        # 2. Check if we have enough data to find cross-type hotspots
+        active_types = [t for t, geoms in high_risk_features.items() if geoms]
+        if len(active_types) < 2:
+            self.iface.messageBar().pushMessage("Info", "Inte tillräckligt med högriskledningar från olika ledningstyper för att hitta hotspots.", level=0, duration=5)
+            return None
+
+        # 3. Create dissolved buffers for each active type
+        buffered_geometries = {}
+        for layer_type, geoms in high_risk_features.items():
+            if not geoms:
+                continue
+
+            combined_geom = QgsGeometry.collectGeometry(geoms)
+            buffer_geom = combined_geom.buffer(distance, 5)
+            buffered_geometries[layer_type] = buffer_geom
+
+        # 4. Find intersections between the buffered geometries
+        hotspot_polygons = []
+        type_pairs = [
+            ('Vatten', 'Spillvatten'),
+            ('Vatten', 'Dagvatten'),
+            ('Spillvatten', 'Dagvatten')
+        ]
+
+        for type1, type2 in type_pairs:
+            if type1 in buffered_geometries and type2 in buffered_geometries:
+                geom1 = buffered_geometries[type1]
+                geom2 = buffered_geometries[type2]
+
+                intersection = geom1.intersection(geom2)
+                if not intersection.isEmpty():
+                    hotspot_polygons.append(intersection)
+
+        if not hotspot_polygons:
+            self.iface.messageBar().pushMessage("Info", "Inga hotspots hittades.", level=0, duration=3)
+            return None
+
+        # 5. Combine all found hotspot polygons into a single geometry
+        final_hotspots_geom = QgsGeometry.collectGeometry(hotspot_polygons)
+
+        self.iface.messageBar().pushMessage("Success", f"{len(hotspot_polygons)} hotspot-områden identifierade.", level=0, duration=4)
+
+        return final_hotspots_geom
+
+    def _create_hotspot_layer(self, hotspot_geom, crs):
+        # 1. Create a new memory layer with the correct CRS
+        vl = QgsVectorLayer(f"Polygon?crs={crs.authid()}", "Hotspots", "memory")
+        provider = vl.dataProvider()
+
+        # 2. Add the hotspot geometry as a feature
+        feature = QgsFeature()
+        feature.setGeometry(hotspot_geom)
+        provider.addFeatures([feature])
+
+        # 3. Create the "Aura" style
+        aura_symbol = QgsFillSymbol()
+        aura_symbol.deleteSymbolLayer(0)
+
+        # Glow layers (multiple blurred layers)
+        # The blur radius and color can be adjusted for different visual effects
+        for blur_radius, opacity, color in [(12, 20, '255,50,50'), (8, 40, '255,0,0'), (4, 70, '200,0,0')]:
+            glow_fill = QgsSimpleFill.create({'color': f'{color},{opacity}', 'style': 'solid'})
+
+            blur_effect = QgsBlurEffect()
+            blur_effect.setBlurRadius(blur_radius)
+            glow_fill.setEffect(blur_effect)
+
+            aura_symbol.appendSymbolLayer(glow_fill)
+
+        # 4. Apply the style to the layer
+        renderer = vl.renderer()
+        renderer.setSymbol(aura_symbol)
+        vl.triggerRepaint() # To make the style apply visually
+
+        # 5. Add the layer to the project
+        QgsProject.instance().addMapLayer(vl)
