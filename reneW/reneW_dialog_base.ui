@@ -63,6 +63,13 @@
         </property>
        </spacer>
       </item>
+      <item>
+       <widget class="QPushButton" name="mBtnEditParameters">
+        <property name="text">
+         <string>Edit Parameters...</string>
+        </property>
+       </widget>
+      </item>
      </layout>
     </widget>
    </item>

@@ -6,6 +6,7 @@ from qgis.PyQt.QtWidgets import (QDialog, QDialogButtonBox, QWidget, QVBoxLayout
 from qgis.PyQt.QtCore import QVariant
 from qgis.core import QgsMapLayerProxyModel, QgsProject, QgsVectorLayer
 from qgis.gui import QgsFieldComboBox, QgsMapLayerComboBox
+from .parameter_editor_dialog import ParameterEditorDialog
 
 # This loads your .ui file
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -22,6 +23,7 @@ class ReneWDialog(QDialog, FORM_CLASS):
 
         # --- Global Settings ---
         self.mCheckBoxEnableDimensionWeighting.toggled.connect(self.mSpinBoxDimensionFactor.setEnabled)
+        self.mBtnEditParameters.clicked.connect(self._open_parameter_editor)
 
         # --- Hotspot Analysis Settings ---
         self.mCheckHotspot.toggled.connect(self.mSpinBoxHotspotThreshold.setEnabled)
@@ -105,6 +107,16 @@ class ReneWDialog(QDialog, FORM_CLASS):
             tab_data['dim_combo'].fieldChanged.connect(self._validate_inputs)
 
             group.setEnabled(False)
+
+    def _open_parameter_editor(self):
+        """Opens the parameter editor dialog."""
+        editor_dialog = ParameterEditorDialog(self)
+        result = editor_dialog.exec_()
+
+        # If the user saved changes, reload the dynamic tabs
+        if result:
+            self._create_dynamic_tabs()
+            self._validate_inputs()
 
 
     # --- Getter methods for global settings ---
