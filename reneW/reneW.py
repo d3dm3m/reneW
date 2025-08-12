@@ -2,10 +2,12 @@ import os
 from datetime import datetime
 
 from qgis.PyQt.QtWidgets import QAction
+from qgis.PyQt.QtWidgets import QAction
 from qgis.PyQt.QtGui import QIcon, QColor
 from qgis.PyQt.QtCore import QVariant
 from qgis.core import (QgsProject, QgsVectorLayer, QgsField, QgsGeometry,
-                     QgsFeature, QgsFillSymbol, QgsSimpleFill, QgsBlurEffect)
+                     QgsFeature)
+from qgis.gui import QgsFillSymbol, QgsSimpleFill, QgsBlurEffect
 
 # Import the code for the dialog and the calculation logic
 from .reneW_dialog import ReneWDialog
