@@ -1,11 +1,11 @@
 import os
 from datetime import datetime
 
-from qgis.PyQt.QtWidgets import QAction
+from qgis.PyQt.QtWidgets import QAction, QProgressBar
 from qgis.PyQt.QtGui import QIcon, QColor
-from qgis.PyQt.QtCore import QVariant, QCoreApplication
+from qgis.PyQt.QtCore import QVariant, QCoreApplication, Qt
 from qgis.core import (QgsProject, QgsVectorLayer, QgsField, QgsGeometry,
-                     QgsFeature, QgsFillSymbol, QgsSimpleFill)
+                     QgsFeature, QgsFillSymbol, QgsSimpleFill, QgsMessageLog, Qgis)
 from qgis.gui import QgsBlurEffect
 
 # Import the code for the dialog and the calculation logic
@@ -126,12 +126,29 @@ class ReneW:
                 self.iface.messageBar().pushMessage(tr("Info"), tr("No layers were selected for analysis."), level=0, duration=3)
                 return
 
+            QgsMessageLog.logMessage(tr("Starting reneW analysis."), 'reneW', Qgis.Info)
+
+            # --- Setup Progress Bar ---
+            total_features = 0
+            for config in analysis_configs:
+                total_features += config['layer'].featureCount()
+
+            progress_bar = QProgressBar()
+            progress_bar.setMaximum(total_features)
+            progress_bar.setAlignment(Qt.AlignLeft|Qt.AlignVCenter)
+
+            message_bar_item = self.iface.messageBar().createMessage(tr("Calculating renewal need..."))
+            message_bar_item.layout().addWidget(progress_bar)
+            self.iface.messageBar().pushWidget(message_bar_item, Qgis.Info)
+
+            processed_features = 0
             processed_layers = 0
             high_risk_results = []
             current_year = datetime.now().year
 
             for config in analysis_configs:
                 layer = config['layer']
+                QgsMessageLog.logMessage(tr("Processing layer: {0}").format(layer.name()), 'reneW', Qgis.Info)
                 layer_type = config['type'] # Vatten, Spillvatten, or Dagvatten
 
                 # Map dialog type to calculation logic type
@@ -165,6 +182,8 @@ class ReneW:
 
                 layer.startEditing()
                 for feature in layer.getFeatures():
+                    processed_features += 1
+                    progress_bar.setValue(processed_features)
                     attrs = feature.attributes()
                     material = attrs[material_idx]
 
@@ -276,7 +295,11 @@ class ReneW:
                 self.results_dialog.populate_table(high_risk_results)
                 self.results_dialog.show()
 
+            self.iface.messageBar().clearWidgets()
+            QgsMessageLog.logMessage(tr("reneW analysis finished."), 'reneW', Qgis.Success)
+
     def _run_hotspot_analysis(self, analysis_configs, threshold, distance):
+        QgsMessageLog.logMessage(tr("Starting hotspot analysis."), 'reneW', Qgis.Info)
         self.iface.messageBar().pushMessage(tr("Info"), tr("Starting hotspot analysis..."), level=0, duration=3)
 
         high_risk_features = {'Vatten': [], 'Spillvatten': [], 'Dagvatten': []}
@@ -294,6 +317,11 @@ class ReneW:
                 if feature[field_name] is not None and feature[field_name] >= threshold:
                     high_risk_features[layer_type].append(feature.geometry())
 
+        for pipe_type, geoms in high_risk_features.items():
+            QgsMessageLog.logMessage(
+                tr("{0} high-risk features found for type '{1}'.").format(len(geoms), pipe_type),
+                'reneW', Qgis.Info)
+
         # 2. Check if we have enough data to find cross-type hotspots
         active_types = [t for t, geoms in high_risk_features.items() if geoms]
         if len(active_types) < 2:
@@ -304,6 +332,8 @@ class ReneW:
             return None
 
         # 3. Create dissolved buffers for each active type
+        QgsMessageLog.logMessage(
+            tr("Creating buffers with distance {0}m.").format(distance), 'reneW', Qgis.Info)
         buffered_geometries = {}
         for layer_type, geoms in high_risk_features.items():
             if not geoms:
@@ -331,6 +361,7 @@ class ReneW:
                     hotspot_polygons.append(intersection)
 
         if not hotspot_polygons:
+            QgsMessageLog.logMessage(tr("No intersections found between buffered geometries."), 'reneW', Qgis.Info)
             self.iface.messageBar().pushMessage(tr("Info"), tr("No hotspots were found."), level=0, duration=3)
             return None
 
