@@ -1,8 +1,11 @@
 import os
+import json
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog, QDialogButtonBox
+from qgis.PyQt.QtWidgets import (QDialog, QDialogButtonBox, QWidget, QVBoxLayout,
+                                 QCheckBox, QGroupBox, QGridLayout, QLabel)
 from qgis.PyQt.QtCore import QVariant
 from qgis.core import QgsMapLayerProxyModel, QgsProject, QgsVectorLayer
+from qgis.gui import QgsFieldComboBox, QgsMapLayerComboBox
 
 # This loads your .ui file
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -14,55 +17,11 @@ class ReneWDialog(QDialog, FORM_CLASS):
         super(ReneWDialog, self).__init__(parent)
         self.setupUi(self)
 
-        # --- Tab Configurations ---
-        self.tabs = [
-            {
-                'name': 'Vatten',
-                'check': self.mCheckVatten,
-                'group': self.mGroupVatten,
-                'layer_combo': self.mMapLayerComboVatten,
-                'mat_combo': self.mFieldComboMaterialVatten,
-                'year_combo': self.mFieldComboYearVatten,
-                'dim_combo': self.mFieldComboDimensionVatten,
-            },
-            {
-                'name': 'Spillvatten',
-                'check': self.mCheckSpillvatten,
-                'group': self.mGroupSpillvatten,
-                'layer_combo': self.mMapLayerComboSpillvatten,
-                'mat_combo': self.mFieldComboMaterialSpillvatten,
-                'year_combo': self.mFieldComboYearSpillvatten,
-                'dim_combo': self.mFieldComboDimensionSpillvatten,
-            },
-            {
-                'name': 'Dagvatten',
-                'check': self.mCheckDagvatten,
-                'group': self.mGroupDagvatten,
-                'layer_combo': self.mMapLayerComboDagvatten,
-                'mat_combo': self.mFieldComboMaterialDagvatten,
-                'year_combo': self.mFieldComboYearDagvatten,
-                'dim_combo': self.mFieldComboDimensionDagvatten,
-            }
-        ]
+        self.tabs = []
+        self._create_dynamic_tabs()
 
         # --- Global Settings ---
         self.mCheckBoxEnableDimensionWeighting.toggled.connect(self.mSpinBoxDimensionFactor.setEnabled)
-
-        # --- Setup each tab ---
-        for tab in self.tabs:
-            tab['check'].toggled.connect(tab['group'].setEnabled)
-            tab['layer_combo'].setFilters(QgsMapLayerProxyModel.VectorLayer)
-            tab['layer_combo'].layerChanged.connect(tab['mat_combo'].setLayer)
-            tab['layer_combo'].layerChanged.connect(tab['year_combo'].setLayer)
-            tab['layer_combo'].layerChanged.connect(tab['dim_combo'].setLayer)
-            # Connect validation signals
-            tab['check'].toggled.connect(self._validate_inputs)
-            tab['layer_combo'].layerChanged.connect(self._validate_inputs)
-            tab['mat_combo'].fieldChanged.connect(self._validate_inputs)
-            tab['year_combo'].fieldChanged.connect(self._validate_inputs)
-            tab['dim_combo'].fieldChanged.connect(self._validate_inputs)
-            # Set initial state
-            tab['group'].setEnabled(False)
 
         # --- Hotspot Analysis Settings ---
         self.mCheckHotspot.toggled.connect(self.mSpinBoxHotspotThreshold.setEnabled)
@@ -72,6 +31,80 @@ class ReneWDialog(QDialog, FORM_CLASS):
 
         # --- Set initial validation state ---
         self._validate_inputs()
+
+    def _create_dynamic_tabs(self):
+        """Creates UI tabs dynamically based on the parameters.json file."""
+        # Clear existing tabs from the UI designer
+        while self.mTabWidget.count() > 0:
+            self.mTabWidget.removeTab(0)
+
+        # Load parameter sets from JSON
+        param_file = os.path.join(os.path.dirname(__file__), 'parameters.json')
+        try:
+            with open(param_file, 'r') as f:
+                config = json.load(f)
+            parameter_sets = config.get('parameter_sets', [])
+        except (IOError, json.JSONDecodeError):
+            parameter_sets = []
+
+        # Create a tab for each parameter set
+        for param_set in parameter_sets:
+            set_name = param_set.get('name')
+            if not set_name:
+                continue
+
+            # Create widgets for the tab
+            tab_widget = QWidget()
+            tab_layout = QVBoxLayout(tab_widget)
+
+            check = QCheckBox(self.tr("Analyze {0} pipes").format(set_name))
+            group = QGroupBox()
+            grid_layout = QGridLayout(group)
+
+            # Define the fields to be created
+            fields_to_create = [
+                {'label': self.tr("Layer:"), 'name': 'layer_combo', 'widget': QgsMapLayerComboBox},
+                {'label': self.tr("Material field:"), 'name': 'mat_combo', 'widget': QgsFieldComboBox},
+                {'label': self.tr("Construction year field:"), 'name': 'year_combo', 'widget': QgsFieldComboBox},
+                {'label': self.tr("Dimension field:"), 'name': 'dim_combo', 'widget': QgsFieldComboBox},
+                {'label': self.tr("Renovation year (optional):"), 'name': 'reno_year_combo', 'widget': QgsFieldComboBox},
+                {'label': self.tr("Renovation method (optional):"), 'name': 'reno_method_combo', 'widget': QgsFieldComboBox}
+            ]
+
+            tab_data = {'name': set_name, 'check': check, 'group': group}
+
+            for i, field_info in enumerate(fields_to_create):
+                label = QLabel(field_info['label'])
+                combo = field_info['widget']()
+                if 'reno' in field_info['name']: # Allow empty for optional fields
+                    combo.setAllowEmptyFieldName(True)
+
+                grid_layout.addWidget(label, i, 0)
+                grid_layout.addWidget(combo, i, 1)
+                tab_data[field_info['name']] = combo
+
+            # Add widgets to tab layout
+            tab_layout.addWidget(check)
+            tab_layout.addWidget(group)
+            self.mTabWidget.addTab(tab_widget, set_name)
+            self.tabs.append(tab_data)
+
+            # Connect signals
+            check.toggled.connect(group.setEnabled)
+            tab_data['layer_combo'].setFilters(QgsMapLayerProxyModel.VectorLayer)
+            tab_data['layer_combo'].layerChanged.connect(tab_data['mat_combo'].setLayer)
+            tab_data['layer_combo'].layerChanged.connect(tab_data['year_combo'].setLayer)
+            tab_data['layer_combo'].layerChanged.connect(tab_data['dim_combo'].setLayer)
+            tab_data['layer_combo'].layerChanged.connect(tab_data['reno_year_combo'].setLayer)
+            tab_data['layer_combo'].layerChanged.connect(tab_data['reno_method_combo'].setLayer)
+
+            check.toggled.connect(self._validate_inputs)
+            tab_data['layer_combo'].layerChanged.connect(self._validate_inputs)
+            tab_data['mat_combo'].fieldChanged.connect(self._validate_inputs)
+            tab_data['year_combo'].fieldChanged.connect(self._validate_inputs)
+            tab_data['dim_combo'].fieldChanged.connect(self._validate_inputs)
+
+            group.setEnabled(False)
 
 
     # --- Getter methods for global settings ---
@@ -88,40 +121,17 @@ class ReneWDialog(QDialog, FORM_CLASS):
         Each configuration is a dictionary.
         """
         configs = []
-
-        if self.mCheckVatten.isChecked() and self.mMapLayerComboVatten.currentLayer():
-            configs.append({
-                'type': 'Vatten',
-                'layer': self.mMapLayerComboVatten.currentLayer(),
-                'material_field': self.mFieldComboMaterialVatten.currentField(),
-                'year_field': self.mFieldComboYearVatten.currentField(),
-                'dimension_field': self.mFieldComboDimensionVatten.currentField(),
-                'reno_year_field': self.mFieldComboRenoYearVatten.currentField(),
-                'reno_method_field': self.mFieldComboRenoMethodVatten.currentField()
-            })
-
-        if self.mCheckSpillvatten.isChecked() and self.mMapLayerComboSpillvatten.currentLayer():
-            configs.append({
-                'type': 'Spillvatten',
-                'layer': self.mMapLayerComboSpillvatten.currentLayer(),
-                'material_field': self.mFieldComboMaterialSpillvatten.currentField(),
-                'year_field': self.mFieldComboYearSpillvatten.currentField(),
-                'dimension_field': self.mFieldComboDimensionSpillvatten.currentField(),
-                'reno_year_field': self.mFieldComboRenoYearSpillvatten.currentField(),
-                'reno_method_field': self.mFieldComboRenoMethodSpillvatten.currentField()
-            })
-
-        if self.mCheckDagvatten.isChecked() and self.mMapLayerComboDagvatten.currentLayer():
-            configs.append({
-                'type': 'Dagvatten',
-                'layer': self.mMapLayerComboDagvatten.currentLayer(),
-                'material_field': self.mFieldComboMaterialDagvatten.currentField(),
-                'year_field': self.mFieldComboYearDagvatten.currentField(),
-                'dimension_field': self.mFieldComboDimensionDagvatten.currentField(),
-                'reno_year_field': self.mFieldComboRenoYearDagvatten.currentField(),
-                'reno_method_field': self.mFieldComboRenoMethodDagvatten.currentField()
-            })
-
+        for tab in self.tabs:
+            if tab['check'].isChecked() and tab['layer_combo'].currentLayer():
+                configs.append({
+                    'type': tab['name'],
+                    'layer': tab['layer_combo'].currentLayer(),
+                    'material_field': tab['mat_combo'].currentField(),
+                    'year_field': tab['year_combo'].currentField(),
+                    'dimension_field': tab['dim_combo'].currentField(),
+                    'reno_year_field': tab['reno_year_combo'].currentField(),
+                    'reno_method_field': tab['reno_method_combo'].currentField()
+                })
         return configs
 
     # --- Validation Logic ---
@@ -194,35 +204,16 @@ class ReneWDialog(QDialog, FORM_CLASS):
         """Saves the dialog's settings to the current QGIS project."""
         project = QgsProject.instance()
 
-        # Vatten
-        project.writeEntry('reneW', 'vattenEnabled', self.mCheckVatten.isChecked())
-        if self.mMapLayerComboVatten.currentLayer():
-            project.writeEntry('reneW', 'vattenLayer', self.mMapLayerComboVatten.currentLayer().id())
-        project.writeEntry('reneW', 'vattenMaterialField', self.mFieldComboMaterialVatten.currentField())
-        project.writeEntry('reneW', 'vattenYearField', self.mFieldComboYearVatten.currentField())
-        project.writeEntry('reneW', 'vattenDimensionField', self.mFieldComboDimensionVatten.currentField())
-        project.writeEntry('reneW', 'vattenRenoYearField', self.mFieldComboRenoYearVatten.currentField())
-        project.writeEntry('reneW', 'vattenRenoMethodField', self.mFieldComboRenoMethodVatten.currentField())
-
-        # Spillvatten
-        project.writeEntry('reneW', 'spillvattenEnabled', self.mCheckSpillvatten.isChecked())
-        if self.mMapLayerComboSpillvatten.currentLayer():
-            project.writeEntry('reneW', 'spillvattenLayer', self.mMapLayerComboSpillvatten.currentLayer().id())
-        project.writeEntry('reneW', 'spillvattenMaterialField', self.mFieldComboMaterialSpillvatten.currentField())
-        project.writeEntry('reneW', 'spillvattenYearField', self.mFieldComboYearSpillvatten.currentField())
-        project.writeEntry('reneW', 'spillvattenDimensionField', self.mFieldComboDimensionSpillvatten.currentField())
-        project.writeEntry('reneW', 'spillvattenRenoYearField', self.mFieldComboRenoYearSpillvatten.currentField())
-        project.writeEntry('reneW', 'spillvattenRenoMethodField', self.mFieldComboRenoMethodSpillvatten.currentField())
-
-        # Dagvatten
-        project.writeEntry('reneW', 'dagvattenEnabled', self.mCheckDagvatten.isChecked())
-        if self.mMapLayerComboDagvatten.currentLayer():
-            project.writeEntry('reneW', 'dagvattenLayer', self.mMapLayerComboDagvatten.currentLayer().id())
-        project.writeEntry('reneW', 'dagvattenMaterialField', self.mFieldComboMaterialDagvatten.currentField())
-        project.writeEntry('reneW', 'dagvattenYearField', self.mFieldComboYearDagvatten.currentField())
-        project.writeEntry('reneW', 'dagvattenDimensionField', self.mFieldComboDimensionDagvatten.currentField())
-        project.writeEntry('reneW', 'dagvattenRenoYearField', self.mFieldComboRenoYearDagvatten.currentField())
-        project.writeEntry('reneW', 'dagvattenRenoMethodField', self.mFieldComboRenoMethodDagvatten.currentField())
+        for tab in self.tabs:
+            prefix = f"tab_{tab['name']}"
+            project.writeEntry('reneW', f'{prefix}_enabled', tab['check'].isChecked())
+            if tab['layer_combo'].currentLayer():
+                project.writeEntry('reneW', f'{prefix}_layer', tab['layer_combo'].currentLayer().id())
+            project.writeEntry('reneW', f'{prefix}_materialField', tab['mat_combo'].currentField())
+            project.writeEntry('reneW', f'{prefix}_yearField', tab['year_combo'].currentField())
+            project.writeEntry('reneW', f'{prefix}_dimensionField', tab['dim_combo'].currentField())
+            project.writeEntry('reneW', f'{prefix}_renoYearField', tab['reno_year_combo'].currentField())
+            project.writeEntry('reneW', f'{prefix}_renoMethodField', tab['reno_method_combo'].currentField())
 
         # Global settings
         project.writeEntry('reneW', 'dimensionWeightingEnabled', self.useDimensionWeighting())
@@ -243,32 +234,15 @@ class ReneWDialog(QDialog, FORM_CLASS):
                 if layer:
                     combo.setLayer(layer)
 
-        # Vatten
-        self.mCheckVatten.setChecked(project.readBoolEntry('reneW', 'vattenEnabled', False))
-        set_layer_if_exists(self.mMapLayerComboVatten, project.readEntry('reneW', 'vattenLayer', ''))
-        self.mFieldComboMaterialVatten.setField(project.readEntry('reneW', 'vattenMaterialField', ''))
-        self.mFieldComboYearVatten.setField(project.readEntry('reneW', 'vattenYearField', ''))
-        self.mFieldComboDimensionVatten.setField(project.readEntry('reneW', 'vattenDimensionField', ''))
-        self.mFieldComboRenoYearVatten.setField(project.readEntry('reneW', 'vattenRenoYearField', ''))
-        self.mFieldComboRenoMethodVatten.setField(project.readEntry('reneW', 'vattenRenoMethodField', ''))
-
-        # Spillvatten
-        self.mCheckSpillvatten.setChecked(project.readBoolEntry('reneW', 'spillvattenEnabled', False))
-        set_layer_if_exists(self.mMapLayerComboSpillvatten, project.readEntry('reneW', 'spillvattenLayer', ''))
-        self.mFieldComboMaterialSpillvatten.setField(project.readEntry('reneW', 'spillvattenMaterialField', ''))
-        self.mFieldComboYearSpillvatten.setField(project.readEntry('reneW', 'spillvattenYearField', ''))
-        self.mFieldComboDimensionSpillvatten.setField(project.readEntry('reneW', 'spillvattenDimensionField', ''))
-        self.mFieldComboRenoYearSpillvatten.setField(project.readEntry('reneW', 'spillvattenRenoYearField', ''))
-        self.mFieldComboRenoMethodSpillvatten.setField(project.readEntry('reneW', 'spillvattenRenoMethodField', ''))
-
-        # Dagvatten
-        self.mCheckDagvatten.setChecked(project.readBoolEntry('reneW', 'dagvattenEnabled', False))
-        set_layer_if_exists(self.mMapLayerComboDagvatten, project.readEntry('reneW', 'dagvattenLayer', ''))
-        self.mFieldComboMaterialDagvatten.setField(project.readEntry('reneW', 'dagvattenMaterialField', ''))
-        self.mFieldComboYearDagvatten.setField(project.readEntry('reneW', 'dagvattenYearField', ''))
-        self.mFieldComboDimensionDagvatten.setField(project.readEntry('reneW', 'dagvattenDimensionField', ''))
-        self.mFieldComboRenoYearDagvatten.setField(project.readEntry('reneW', 'dagvattenRenoYearField', ''))
-        self.mFieldComboRenoMethodDagvatten.setField(project.readEntry('reneW', 'dagvattenRenoMethodField', ''))
+        for tab in self.tabs:
+            prefix = f"tab_{tab['name']}"
+            tab['check'].setChecked(project.readBoolEntry('reneW', f'{prefix}_enabled', False))
+            set_layer_if_exists(tab['layer_combo'], project.readEntry('reneW', f'{prefix}_layer', ''))
+            tab['mat_combo'].setField(project.readEntry('reneW', f'{prefix}_materialField', ''))
+            tab['year_combo'].setField(project.readEntry('reneW', f'{prefix}_yearField', ''))
+            tab['dim_combo'].setField(project.readEntry('reneW', f'{prefix}_dimensionField', ''))
+            tab['reno_year_combo'].setField(project.readEntry('reneW', f'{prefix}_renoYearField', ''))
+            tab['reno_method_combo'].setField(project.readEntry('reneW', f'{prefix}_renoMethodField', ''))
 
         # Global settings
         self.mCheckBoxEnableDimensionWeighting.setChecked(project.readBoolEntry('reneW', 'dimensionWeightingEnabled', False))
