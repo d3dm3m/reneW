@@ -87,6 +87,16 @@ class ReneW:
 
     def run(self):
         """Run method that performs all the real work"""
+        # Reload parameters every time the plugin is run.
+        # This allows users to edit the JSON file and have it reloaded without restarting QGIS.
+        calculation_logic.load_parameters()
+
+        # Check if the parameters were loaded correctly.
+        config_error = calculation_logic.get_config_error()
+        if config_error:
+            self.iface.messageBar().pushMessage("Error", f"reneW Plugin: {config_error}", level=2, duration=10)
+            return
+
         if self.dlg is None:
             self.dlg = ReneWDialog()
 

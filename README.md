@@ -79,3 +79,46 @@ If enabled, the base renewal need is multiplied by a consequence factor based on
 `Final Score = Renewal Need * (1 + (Dimension * Factor))`
 
 This allows you to give a higher weight to larger pipes, where a failure would have a greater consequence.
+
+## Advanced Configuration: Customizing Parameters
+
+The core of the `reneW` plugin's calculation logic is controlled by a configuration file named `parameters.json`, located in the plugin's installation directory (`reneW/parameters.json`). This file allows you to adapt the plugin to your specific data, materials, and survival models without needing to edit the Python code.
+
+If this file is missing or contains errors, the plugin will show an error message when you try to run it.
+
+### File Structure
+
+The JSON file has a main `parameter_sets` array, which contains objects for each pipeline type supported by the UI: `Vatten`, `Spillvatten`, and `Dagvatten`.
+
+Each pipeline type object has two main parts:
+1.  `materials`: An array of material definitions.
+2.  `default_material`: The parameter set to use if no specific material is matched.
+
+### Material Definition
+
+Each object in the `materials` array defines a specific material and its survival model parameters.
+
+*   `"key"`: A descriptive name for the material (e.g., "Segjärn <1980").
+*   `"keywords"`: An array of lowercase strings. The plugin will search for these keywords in your data's material field to find a match. For example, if your material is "Segjärnsrör", the keyword "segjärn" will match it.
+*   `"year_min"` (optional): The minimum installation year for this rule to apply.
+*   `"year_max"` (optional): The maximum installation year for this rule to apply.
+*   `"params"`: An object containing the `a`, `b`, and `c` parameters for the Herz model.
+
+**Example Material Definition:**
+```json
+{
+  "key": "PVC <1970",
+  "keywords": ["pvc"],
+  "year_max": 1969,
+  "params": {"a": 6.0, "b": 0.104, "c": 30}
+}
+```
+This rule applies to any pipe where the material field contains "pvc" and the installation year is 1969 or earlier.
+
+### How to Customize
+
+*   **To adjust parameters:** Simply change the `a`, `b`, or `c` values for any material.
+*   **To add a new material:** Copy an existing material object, paste it into the `materials` array for the correct pipeline type, and edit the `key`, `keywords`, and `params` to match your new material.
+*   **To add a new material name:** If you use a different name for an existing material (e.g., "Ductile Iron" instead of "Segjärn"), you can just add your term to the `keywords` array for that material.
+
+After saving your changes to `parameters.json`, the plugin will automatically use the new configuration the next time you run it in QGIS.

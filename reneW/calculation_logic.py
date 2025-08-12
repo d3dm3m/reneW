@@ -3,92 +3,78 @@
 This module contains the calculation logic for the reneW QGIS plugin,
 based on the Herz survival function model.
 """
+import os
+import json
 
-# Parameters for each pipeline material, provided by the user.
-# These are the 'a', 'b', and 'c' parameters for the Herz model.
-# NOTE: Parameters for 'Stål', 'Asbestcement', and 'Lergods' are placeholders
-# based on other materials and should be calibrated with real-world data.
-PARAMETERS = {
-    'Avlopp': {
-        'S-Betong <1950': {'a': 12.394630847256085, 'b': 0.053337105584475054, 'c': 30},
-        'S-Betong 1950-69': {'a': 2.2095582333960015, 'b': 0.0261337765364261, 'c': 30},
-        'S-Betong >=1970': {'a': 61.29814935110069, 'b': 0.043661643079612622, 'c': 30},
-        'S-Plast': {'a': 61.29814935110069, 'b': 0.043661643079612622, 'c': 30},
-        'S-Lergods': {'a': 19.156047145198428, 'b': 0.035905009195958362, 'c': 30}, # Placeholder, as Övrigt/okänt A
-        'S-Övrigt/okänt': {'a': 19.156047145198428, 'b': 0.035905009195958362, 'c': 30}, # Using S-Övrigt/okänt A
+# Global variable to hold the loaded parameters
+CONFIG_DATA = None
+CONFIG_ERROR = None
 
-        'D-Betong <1950': {'a': 4.8243258238197129, 'b': 0.0274356222257029, 'c': 30},
-        'D-Betong >=1950': {'a': 5.101654542374197, 'b': 0.02063502937932888, 'c': 30},
-        'D-Plast': {'a': 61.29814935110069, 'b': 0.043661643079612622, 'c': 30},
-        'D-Lergods': {'a': 1.9366525983057512, 'b': 0.022838846131023077, 'c': 30}, # Placeholder, as Övrigt/okänt C
-        'D-Övrigt/okänt': {'a': 1.9366525983057512, 'b': 0.022838846131023077, 'c': 30}, # Using D-Övrigt/okänt C
-    },
-    'Vatten': {
-        'Gråjärn <1950': {'a': 55.490601649355284, 'b': 0.062332638228731335, 'c': 30},
-        'Gråjärn >=1950': {'a': 55.490601649355284, 'b': 0.062332638228731335, 'c': 40},
-        'Segjärn <1980': {'a': 55.490601649355284, 'b': 0.062332638228731335, 'c': 5},
-        'Segjärn >=1980': {'a': 106.9383234418553, 'b': 0.062543758427977422, 'c': 50},
-        'PE': {'a': 106.9383234418553, 'b': 0.062543758427977422, 'c': 50},
-        'PVC <1970': {'a': 5.9999999999999982, 'b': 0.1039720770839918, 'c': 30},
-        'PVC >=1970': {'a': 55.490601649355284, 'b': 0.062332638228731335, 'c': 40},
-        'Stål': {'a': 55.490601649355284, 'b': 0.062332638228731335, 'c': 30}, # Placeholder, as Gråjärn <1950
-        'Asbestcement': {'a': 55.490601649355284, 'b': 0.062332638228731335, 'c': 30}, # Placeholder, as Gråjärn <1950
-        'Övrigt/okänt': {'a': 55.490601649355284, 'b': 0.062332638228731335, 'c': 30}, # Using Övrigt/okänt A
-    }
-}
-
-def get_parameter_key(material: str, year: int, layer_type: str) -> str:
+def load_parameters():
     """
-    Determines the correct parameter dictionary key based on material, installation year, and layer type.
+    Loads calculation parameters from the parameters.json file.
+    This function is executed when the module is first imported.
     """
-    if not material or not isinstance(material, str):
-        return 'Övrigt/okänt'
+    global CONFIG_DATA, CONFIG_ERROR
+
+    # Reset state
+    CONFIG_DATA = None
+    CONFIG_ERROR = None
+
+    try:
+        # Construct the path to the parameters.json file relative to this script
+        plugin_dir = os.path.dirname(__file__)
+        config_path = os.path.join(plugin_dir, 'parameters.json')
+
+        if not os.path.exists(config_path):
+            raise FileNotFoundError("parameters.json not found.")
+
+        with open(config_path, 'r', encoding='utf-8') as f:
+            CONFIG_DATA = json.load(f)
+
+    except (FileNotFoundError, json.JSONDecodeError, Exception) as e:
+        CONFIG_ERROR = f"Failed to load or parse 'parameters.json': {e}"
+        CONFIG_DATA = None
+
+def get_config_error():
+    """Returns the configuration error message, if any."""
+    return CONFIG_ERROR
+
+def find_material_params(material: str, year: int, pipeline_type: str) -> dict:
+    """
+    Finds the Herz parameters for a given material, installation year, and pipeline type
+    by searching through the loaded configuration data.
+    """
+    if not CONFIG_DATA or not isinstance(material, str):
+        return None
 
     mat_lower = material.lower().strip()
 
-    # Plastics
-    if any(p in mat_lower for p in ['pvc', 'pe', 'pp', 'pem', 'pel', 'peh', 'polyeten', 'ultra', 'pragma', 'flexoren']):
-        if layer_type == 'Vatten':
-            if 'pvc' in mat_lower:
-                return 'PVC <1970' if year < 1970 else 'PVC >=1970'
-            return 'PE' # Group all other plastics under PE for Vatten
-        elif layer_type in ['Spillvatten', 'Dagvatten']:
-            return 'S-Plast' if layer_type == 'Spillvatten' else 'D-Plast'
+    # Find the correct parameter set for the pipeline type (e.g., "Vatten", "Spillvatten")
+    param_set = next((s for s in CONFIG_DATA.get('parameter_sets', []) if s['name'] == pipeline_type), None)
 
-    # Iron pipes
-    if 'järn' in mat_lower or mat_lower in ['gjj', 'sjj', 'segj', 'seg']:
-        if 'grå' in mat_lower or mat_lower == 'gjj':
-            return 'Gråjärn <1950' if year < 1950 else 'Gråjärn >=1950'
-        if 'seg' in mat_lower or mat_lower == 'sjj':
-            return 'Segjärn <1980' if year < 1980 else 'Segjärn >=1980'
-        return 'Gråjärn >=1950' # Default for generic 'järn'
+    if not param_set:
+        return None
 
-    # Concrete pipes
-    if 'btg' in mat_lower:
-        if layer_type == 'Spillvatten':
-            if year < 1950: return 'S-Betong <1950'
-            if 1950 <= year < 1970: return 'S-Betong 1950-69'
-            return 'S-Betong >=1970'
-        elif layer_type == 'Dagvatten':
-            return 'D-Betong <1950' if year < 1950 else 'D-Betong >=1950'
+    # Search through the materials in the set
+    for mat_config in param_set.get('materials', []):
+        # Check for keyword match
+        if not any(keyword in mat_lower for keyword in mat_config.get('keywords', [])):
+            continue
 
-    # Steel pipes
-    if 'stål' in mat_lower or 'sta' in mat_lower or 'gal' in mat_lower:
-        return 'Stål'
+        # Check for year constraints
+        year_min = mat_config.get('year_min')
+        year_max = mat_config.get('year_max')
 
-    # Asbestos cement
-    if 'asb' in mat_lower or 'eternit' in mat_lower:
-        return 'Asbestcement'
+        if year_min and year >= year_min and (not year_max or year <= year_max):
+            return mat_config.get('params')
+        elif year_max and year <= year_max and not year_min:
+            return mat_config.get('params')
+        elif not year_min and not year_max:
+            return mat_config.get('params')
 
-    # Clay pipes
-    if 'ler' in mat_lower or 'höganäs' in mat_lower or 'tegel' in mat_lower:
-        return 'S-Lergods' if layer_type == 'Spillvatten' else 'D-Lergods'
-
-    # Default to 'unknown'
-    if layer_type == 'Vatten':
-        return 'Övrigt/okänt'
-    else: # Spillvatten or Dagvatten
-        return 'S-Övrigt/okänt' if layer_type == 'Spillvatten' else 'D-Övrigt/okänt'
+    # If no specific material matched, return the default for the set
+    return param_set.get('default_material', {}).get('params')
 
 
 def calculate_renewal_need(
@@ -104,35 +90,44 @@ def calculate_renewal_need(
     Calculates the renewal need for a pipe based on its type, material, and age,
     using the Herz survival model, and optionally applies a dimension-based weighting.
     """
-    # Map the UI layer type ('Vatten', 'Spillvatten', 'Dagvatten') to the
-    # parameter dictionary keys ('Vatten', 'Avlopp')
-    calc_pipeline_type = 'Avlopp' if pipeline_type in ['Spillvatten', 'Dagvatten'] else 'Vatten'
+    params = find_material_params(material, year, pipeline_type)
 
-    param_key = get_parameter_key(material, year, pipeline_type)
-
-    if not param_key or calc_pipeline_type not in PARAMETERS or param_key not in PARAMETERS[calc_pipeline_type]:
+    if not params:
         return 0.0
 
-    params = PARAMETERS[calc_pipeline_type][param_key]
-    a = params['a']
-    b = params['b']
-    c = params['c']
+    a = params.get('a')
+    b = params.get('b')
+    c = params.get('c')
 
-    if age <= c:
+    if None in [a, b, c] or age <= c:
         return 0.0
 
     try:
+        # Ensure 'a' is not zero to prevent division by zero
+        if a == 0:
+            return 0.0
+
         base = (age - c) / a
+
+        # The base of the power should not be negative
         if base < 0:
             return 0.0
+
         survival_probability = 1.0 / (1.0 + base**b)
-    except (ValueError, ZeroDivisionError):
+    except (ValueError, ZeroDivisionError, OverflowError):
         return 0.0
 
     renewal_need = 1.0 - survival_probability
 
     if use_dimension_weighting and dimension > 0 and dimension_factor > 0:
-        final_need = renewal_need * (1 + (dimension * dimension_factor))
+        # Apply weighting factor, ensuring it doesn't lead to an excessive score
+        # The formula is Renewal Need * (1 + (Dimension * Factor))
+        # The factor is typically small (e.g., 0.001)
+        weight = 1.0 + (dimension * dimension_factor)
+        final_need = renewal_need * weight
         return final_need
 
     return renewal_need
+
+# --- Initial load of parameters when the module is imported ---
+load_parameters()
