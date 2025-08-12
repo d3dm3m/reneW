@@ -4,15 +4,18 @@ from qgis.PyQt import uic
 from qgis.PyQt.QtCore import pyqtSignal, QRectF, QCoreApplication
 from qgis.PyQt.QtWidgets import QDialog, QFileDialog, QTableWidgetItem
 from qgis.core import (QgsProject, QgsPrintLayout, QgsLayoutItemLabel,
-                     QgsLayoutExporter, QgsUnitTypes)
+                     QgsLayoutExporter)
+
 
 def tr(message):
     """Get the translation for a string using Qt translation API."""
     return QCoreApplication.translate('ResultsDialog', message)
 
+
 # This loads your .ui file
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'results_dialog.ui'))
+
 
 class ResultsDialog(QDialog, FORM_CLASS):
     # Signal to be emitted when user wants to zoom to a feature
@@ -43,17 +46,23 @@ class ResultsDialog(QDialog, FORM_CLASS):
         self.mTableWidget.setRowCount(len(results_data))
 
         for row, item in enumerate(results_data):
-            self.mTableWidget.setItem(row, 0, QTableWidgetItem(item.get('layer_name', '')))
-            self.mTableWidget.setItem(row, 1, QTableWidgetItem(str(item.get('feature_id', ''))))
-            self.mTableWidget.setItem(row, 2, QTableWidgetItem(item.get('material', '')))
-            self.mTableWidget.setItem(row, 3, QTableWidgetItem(str(item.get('age', ''))))
+            self.mTableWidget.setItem(
+                row, 0, QTableWidgetItem(item.get('layer_name', '')))
+            self.mTableWidget.setItem(row, 1, QTableWidgetItem(
+                str(item.get('feature_id', ''))))
+            self.mTableWidget.setItem(
+                row, 2, QTableWidgetItem(item.get('material', '')))
+            self.mTableWidget.setItem(
+                row, 3, QTableWidgetItem(str(item.get('age', ''))))
 
             renewal_need_item = QTableWidgetItem()
             renewal_need_item.setData(0, item.get('renewal_need', 0.0))
             self.mTableWidget.setItem(row, 4, renewal_need_item)
 
-            self.mTableWidget.setItem(row, 5, QTableWidgetItem(item.get('layer_id', '')))
-            self.mTableWidget.setItem(row, 6, QTableWidgetItem(str(item.get('feature_id', ''))))
+            self.mTableWidget.setItem(
+                row, 5, QTableWidgetItem(item.get('layer_id', '')))
+            self.mTableWidget.setItem(row, 6, QTableWidgetItem(
+                str(item.get('feature_id', ''))))
 
         self.mTableWidget.setColumnHidden(5, True)
         self.mTableWidget.setColumnHidden(6, True)
@@ -79,24 +88,28 @@ class ResultsDialog(QDialog, FORM_CLASS):
         if not self._results_data:
             return
 
-        path, _ = QFileDialog.getSaveFileName(self, tr("Save CSV"), "", tr("CSV files (*.csv)"))
+        path, _ = QFileDialog.getSaveFileName(
+            self, tr("Save CSV"), "", tr("CSV files (*.csv)"))
         if not path:
             return
 
         try:
             with open(path, 'w', newline='', encoding='utf-8-sig') as f:
                 writer = csv.writer(f, delimiter=';')
-                header = [self.mTableWidget.horizontalHeaderItem(i).text() for i in range(self.mTableWidget.columnCount()) if not self.mTableWidget.isColumnHidden(i)]
+                header = [self.mTableWidget.horizontalHeaderItem(i).text() for i in range(
+                    self.mTableWidget.columnCount()) if not self.mTableWidget.isColumnHidden(i)]
                 writer.writerow(header)
                 for row in range(self.mTableWidget.rowCount()):
-                    row_data = [self.mTableWidget.item(row, col).text() for col in range(self.mTableWidget.columnCount()) if not self.mTableWidget.isColumnHidden(col)]
+                    row_data = [self.mTableWidget.item(row, col).text() for col in range(
+                        self.mTableWidget.columnCount()) if not self.mTableWidget.isColumnHidden(col)]
                     writer.writerow(row_data)
         except Exception as e:
             print(f"Could not export to CSV: {e}")
 
     def _export_to_pdf(self):
         """Exports a simple summary report to a PDF file."""
-        path, _ = QFileDialog.getSaveFileName(self, tr("Save PDF Report"), "", tr("PDF files (*.pdf)"))
+        path, _ = QFileDialog.getSaveFileName(
+            self, tr("Save PDF Report"), "", tr("PDF files (*.pdf)"))
         if not path:
             return
 
@@ -106,7 +119,8 @@ class ResultsDialog(QDialog, FORM_CLASS):
 
         # Remove layout if it already exists to avoid duplicates
         if layout_manager.layoutByName(layout_name):
-            layout_manager.removeLayout(layout_manager.layoutByName(layout_name))
+            layout_manager.removeLayout(
+                layout_manager.layoutByName(layout_name))
 
         layout = QgsPrintLayout(project)
         layout.initializeDefaults()
@@ -115,7 +129,7 @@ class ResultsDialog(QDialog, FORM_CLASS):
         # Add Title
         title = QgsLayoutItemLabel(layout)
         title.setText(tr("Summary Report - reneW Analysis"))
-        title.setFont(self.font()) # Use dialog's font
+        title.setFont(self.font())  # Use dialog's font
         title.setFontSize(18)
         title.adjustSizeToText()
         layout.addLayoutItem(title)
@@ -145,7 +159,7 @@ class ResultsDialog(QDialog, FORM_CLASS):
         exporter.exportToPdf(path, settings)
 
         # Clean up the temporary layout
-        layout_manager.addLayout(layout) # needs to be added to be removed
+        layout_manager.addLayout(layout)  # needs to be added to be removed
         layout_manager.removeLayout(layout)
 
         # Optionally, notify the user

@@ -10,6 +10,7 @@ import json
 CONFIG_DATA = None
 CONFIG_ERROR = None
 
+
 def load_parameters():
     """
     Loads calculation parameters from the parameters.json file.
@@ -36,22 +37,25 @@ def load_parameters():
         CONFIG_ERROR = f"Failed to load or parse 'parameters.json': {e}"
         CONFIG_DATA = None
 
+
 def get_config_error():
     """Returns the configuration error message, if any."""
     return CONFIG_ERROR
 
+
 def find_material_params(material: str, year: int, pipeline_type: str) -> dict:
     """
-    Finds the Herz parameters for a given material, installation year, and pipeline type
-    by searching through the loaded configuration data.
+    Finds the Herz parameters for a given material, installation year,
+    and pipeline type by searching through the loaded configuration data.
     """
     if not CONFIG_DATA or not isinstance(material, str):
         return None
 
     mat_lower = material.lower().strip()
 
-    # Find the correct parameter set for the pipeline type (e.g., "Vatten", "Spillvatten")
-    param_set = next((s for s in CONFIG_DATA.get('parameter_sets', []) if s['name'] == pipeline_type), None)
+    # Find the correct parameter set for the pipeline type
+    param_set = next((s for s in CONFIG_DATA.get('parameter_sets', [])
+                      if s['name'] == pipeline_type), None)
 
     if not param_set:
         return None
@@ -59,7 +63,8 @@ def find_material_params(material: str, year: int, pipeline_type: str) -> dict:
     # Search through the materials in the set
     for mat_config in param_set.get('materials', []):
         # Check for keyword match
-        if not any(keyword in mat_lower for keyword in mat_config.get('keywords', [])):
+        if not any(keyword in mat_lower for keyword in
+                   mat_config.get('keywords', [])):
             continue
 
         # Check for year constraints
@@ -78,17 +83,17 @@ def find_material_params(material: str, year: int, pipeline_type: str) -> dict:
 
 
 def calculate_renewal_need(
-    pipeline_type: str,
-    material: str,
-    age: int,
-    year: int,
-    dimension: float,
-    use_dimension_weighting: bool,
-    dimension_factor: float
-) -> float:
+        pipeline_type: str,
+        material: str,
+        age: int,
+        year: int,
+        dimension: float,
+        use_dimension_weighting: bool,
+        dimension_factor: float) -> float:
     """
-    Calculates the renewal need for a pipe based on its type, material, and age,
-    using the Herz survival model, and optionally applies a dimension-based weighting.
+    Calculates the renewal need for a pipe based on its type, material,
+    age, using the Herz survival model, and optionally applies a
+    dimension-based weighting.
     """
     params = find_material_params(material, year, pipeline_type)
 
@@ -128,6 +133,7 @@ def calculate_renewal_need(
         return final_need
 
     return renewal_need
+
 
 # --- Initial load of parameters when the module is imported ---
 load_parameters()
