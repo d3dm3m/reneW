@@ -1,6 +1,25 @@
 import unittest
 import os
 import sys
+from unittest.mock import MagicMock
+
+# --- Mock QGIS modules for testing without a QGIS environment ---
+# This block must be before the import of any project files that use QGIS
+MOCK_MODULES = {
+    'qgis': MagicMock(),
+    'qgis.core': MagicMock(),
+    'qgis.gui': MagicMock(),
+    'qgis.PyQt': MagicMock(),
+    'qgis.PyQt.QtCore': MagicMock(),
+    'qgis.PyQt.QtWidgets': MagicMock(),
+    'qgis.PyQt.QtGui': MagicMock(),
+}
+sys.modules.update(MOCK_MODULES)
+
+# Specifically mock the settings call that happens on import
+MOCK_MODULES['qgis.PyQt.QtCore'].QSettings.return_value.value.return_value = 'en'
+# --- End of Mocking ---
+
 
 # Add the parent directory to the Python path to allow sibling imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))

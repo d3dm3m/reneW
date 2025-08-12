@@ -3,7 +3,7 @@ from datetime import datetime
 
 from qgis.PyQt.QtWidgets import QAction
 from qgis.PyQt.QtGui import QIcon, QColor
-from qgis.PyQt.QtCore import QVariant
+from qgis.PyQt.QtCore import QVariant, QCoreApplication
 from qgis.core import (QgsProject, QgsVectorLayer, QgsField, QgsGeometry,
                      QgsFeature, QgsFillSymbol, QgsSimpleFill)
 from qgis.gui import QgsBlurEffect
@@ -12,6 +12,10 @@ from qgis.gui import QgsBlurEffect
 from .reneW_dialog import ReneWDialog
 from .results_dialog import ResultsDialog
 from . import calculation_logic
+
+def tr(message):
+    """Get the translation for a string using Qt translation API."""
+    return QCoreApplication.translate('ReneW', message)
 
 class ReneW:
     """QGIS Plugin Implementation."""
@@ -26,8 +30,8 @@ class ReneW:
         self.iface = iface
         self.plugin_dir = os.path.dirname(__file__)
         self.actions = []
-        self.menu = u'&reneW'
-        self.toolbar = self.iface.addToolBar(u'reneW')
+        self.menu = tr(u'&reneW')
+        self.toolbar = self.iface.addToolBar(tr(u'reneW'))
         self.toolbar.setObjectName(u'reneW')
         self.dlg = None
         self.results_dialog = None
@@ -74,14 +78,14 @@ class ReneW:
         icon_path = os.path.join(self.plugin_dir, 'icon.png')
         self.add_action(
             icon_path,
-            text=u'Run reneW',
+            text=tr(u'Run reneW'),
             callback=self.run,
             parent=self.iface.mainWindow())
 
     def unload(self):
         """Removes the plugin menu item and icon from QGIS GUI."""
         for action in self.actions:
-            self.iface.removePluginMenu(u'&reneW', action)
+            self.iface.removePluginMenu(tr(u'&reneW'), action)
             self.iface.removeToolBarIcon(action)
         del self.toolbar
 
@@ -94,11 +98,15 @@ class ReneW:
         # Check if the parameters were loaded correctly.
         config_error = calculation_logic.get_config_error()
         if config_error:
-            self.iface.messageBar().pushMessage("Error", f"reneW Plugin: {config_error}", level=2, duration=10)
+            self.iface.messageBar().pushMessage(
+                tr("Error"),
+                tr("reneW Plugin: {0}").format(config_error),
+                level=2,
+                duration=10)
             return
 
         if self.dlg is None:
-            self.dlg = ReneWDialog()
+            self.dlg = ReneWDialog(self.iface.mainWindow())
 
         # Load last used settings
         self.dlg.load_settings()
@@ -115,7 +123,7 @@ class ReneW:
             dimension_factor = self.dlg.dimensionFactor()
 
             if not analysis_configs:
-                self.iface.messageBar().pushMessage("Info", "Inga lager valdes för analys.", level=0, duration=3)
+                self.iface.messageBar().pushMessage(tr("Info"), tr("No layers were selected for analysis."), level=0, duration=3)
                 return
 
             processed_layers = 0
@@ -149,7 +157,10 @@ class ReneW:
 
                 # Only the base fields are strictly required
                 if any(idx == -1 for idx in [material_idx, year_idx, dimension_idx]):
-                    self.iface.messageBar().pushMessage("Error", f"Något av grundfälten (material, anläggningsår, dimension) kunde inte hittas i lagret '{layer.name()}'. Hoppar över.", level=1)
+                    self.iface.messageBar().pushMessage(
+                        tr("Error"),
+                        tr("One of the required fields (material, year, dimension) could not be found in layer '{0}'. Skipping.").format(layer.name()),
+                        level=1)
                     continue
 
                 layer.startEditing()
@@ -219,14 +230,23 @@ class ReneW:
                         })
 
                 if layer.commitChanges():
-                    self.iface.messageBar().pushMessage("Success", f"Beräkning klar för lagret '{layer.name()}'.", level=0, duration=4)
+                    self.iface.messageBar().pushMessage(
+                        tr("Success"),
+                        tr("Calculation complete for layer '{0}'.").format(layer.name()),
+                        level=0, duration=4)
                     processed_layers += 1
                 else:
                     layer.rollBack()
-                    self.iface.messageBar().pushMessage("Error", f"Kunde inte spara ändringar för lagret '{layer.name()}'.", level=1)
+                    self.iface.messageBar().pushMessage(
+                        tr("Error"),
+                        tr("Could not save changes for layer '{0}'.").format(layer.name()),
+                        level=1)
 
             if processed_layers > 0:
-                self.iface.messageBar().pushMessage("Info", f"Analys slutförd för {processed_layers} lager.", level=0, duration=5)
+                self.iface.messageBar().pushMessage(
+                    tr("Info"),
+                    tr("Analysis complete for {0} layers.").format(processed_layers),
+                    level=0, duration=5)
                 self.iface.mapCanvas().refresh()
 
             # --- Run hotspot analysis if enabled ---
@@ -257,7 +277,7 @@ class ReneW:
                 self.results_dialog.show()
 
     def _run_hotspot_analysis(self, analysis_configs, threshold, distance):
-        self.iface.messageBar().pushMessage("Info", "Startar hotspot-analys...", level=0, duration=3)
+        self.iface.messageBar().pushMessage(tr("Info"), tr("Starting hotspot analysis..."), level=0, duration=3)
 
         high_risk_features = {'Vatten': [], 'Spillvatten': [], 'Dagvatten': []}
 
@@ -277,7 +297,10 @@ class ReneW:
         # 2. Check if we have enough data to find cross-type hotspots
         active_types = [t for t, geoms in high_risk_features.items() if geoms]
         if len(active_types) < 2:
-            self.iface.messageBar().pushMessage("Info", "Inte tillräckligt med högriskledningar från olika ledningstyper för att hitta hotspots.", level=0, duration=5)
+            self.iface.messageBar().pushMessage(
+                tr("Info"),
+                tr("Not enough high-risk pipes from different pipe types to find hotspots."),
+                level=0, duration=5)
             return None
 
         # 3. Create dissolved buffers for each active type
@@ -308,13 +331,16 @@ class ReneW:
                     hotspot_polygons.append(intersection)
 
         if not hotspot_polygons:
-            self.iface.messageBar().pushMessage("Info", "Inga hotspots hittades.", level=0, duration=3)
+            self.iface.messageBar().pushMessage(tr("Info"), tr("No hotspots were found."), level=0, duration=3)
             return None
 
         # 5. Combine all found hotspot polygons into a single geometry
         final_hotspots_geom = QgsGeometry.collectGeometry(hotspot_polygons)
 
-        self.iface.messageBar().pushMessage("Success", f"{len(hotspot_polygons)} hotspot-områden identifierade.", level=0, duration=4)
+        self.iface.messageBar().pushMessage(
+            tr("Success"),
+            tr("{0} hotspot areas identified.").format(len(hotspot_polygons)),
+            level=0, duration=4)
 
         return final_hotspots_geom
 

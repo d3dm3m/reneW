@@ -1,10 +1,14 @@
 import os
 import csv
 from qgis.PyQt import uic
-from qgis.PyQt.QtCore import pyqtSignal, QRectF
+from qgis.PyQt.QtCore import pyqtSignal, QRectF, QCoreApplication
 from qgis.PyQt.QtWidgets import QDialog, QFileDialog, QTableWidgetItem
 from qgis.core import (QgsProject, QgsPrintLayout, QgsLayoutItemLabel,
                      QgsLayoutExporter, QgsUnitTypes)
+
+def tr(message):
+    """Get the translation for a string using Qt translation API."""
+    return QCoreApplication.translate('ResultsDialog', message)
 
 # This loads your .ui file
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -30,7 +34,10 @@ class ResultsDialog(QDialog, FORM_CLASS):
         """Populates the table with results."""
         self._results_data = results_data
 
-        headers = ["Lagernamn", "Lednings-ID", "Material", "Ålder", "Förnyelsebehov", "Layer ID", "Feature ID"]
+        headers = [
+            tr("Layer Name"), tr("Pipe ID"), tr("Material"), tr("Age"),
+            tr("Renewal Need"), tr("Layer ID"), tr("Feature ID")
+        ]
         self.mTableWidget.setColumnCount(len(headers))
         self.mTableWidget.setHorizontalHeaderLabels(headers)
         self.mTableWidget.setRowCount(len(results_data))
@@ -72,7 +79,7 @@ class ResultsDialog(QDialog, FORM_CLASS):
         if not self._results_data:
             return
 
-        path, _ = QFileDialog.getSaveFileName(self, "Spara CSV", "", "CSV-filer (*.csv)")
+        path, _ = QFileDialog.getSaveFileName(self, tr("Save CSV"), "", tr("CSV files (*.csv)"))
         if not path:
             return
 
@@ -89,7 +96,7 @@ class ResultsDialog(QDialog, FORM_CLASS):
 
     def _export_to_pdf(self):
         """Exports a simple summary report to a PDF file."""
-        path, _ = QFileDialog.getSaveFileName(self, "Spara PDF-rapport", "", "PDF-filer (*.pdf)")
+        path, _ = QFileDialog.getSaveFileName(self, tr("Save PDF Report"), "", tr("PDF files (*.pdf)"))
         if not path:
             return
 
@@ -107,7 +114,7 @@ class ResultsDialog(QDialog, FORM_CLASS):
 
         # Add Title
         title = QgsLayoutItemLabel(layout)
-        title.setText("Sammanfattande Rapport - reneW Analys")
+        title.setText(tr("Summary Report - reneW Analysis"))
         title.setFont(self.font()) # Use dialog's font
         title.setFontSize(18)
         title.adjustSizeToText()
@@ -115,13 +122,16 @@ class ResultsDialog(QDialog, FORM_CLASS):
         title.attemptMove(QRectF(10, 10, 200, 20))
 
         # Add Summary Text
-        summary_text = f"""
-        <b>Sammanfattning:</b><br>
-        <ul>
-        <li>Antal högriskledningar (behov > 0.5): {len(self._results_data)} st</li>
-        <li>Antal identifierade hotspots: {self._hotspot_count} st</li>
-        </ul>
-        """
+        summary_text = tr(
+            """
+            <b>Summary:</b><br>
+            <ul>
+            <li>Number of high-risk pipes (need > 0.5): {0}</li>
+            <li>Number of identified hotspots: {1}</li>
+            </ul>
+            """
+        ).format(len(self._results_data), self._hotspot_count)
+
         summary = QgsLayoutItemLabel(layout)
         summary.setText(summary_text)
         summary.setFont(self.font())

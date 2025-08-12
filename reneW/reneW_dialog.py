@@ -145,38 +145,38 @@ class ReneWDialog(QDialog, FORM_CLASS):
             layer = tab['layer_combo'].currentLayer()
 
             if not isinstance(layer, QgsVectorLayer):
-                error_messages.append(f"{tab['name']}: Inget lager valt.")
+                error_messages.append(self.tr("{0}: No layer selected.").format(tab['name']))
                 continue
 
             # Check that required fields are selected
             if not tab['mat_combo'].currentField():
-                error_messages.append(f"{tab['name']}: Materialfält saknas.")
+                error_messages.append(self.tr("{0}: Material field is missing.").format(tab['name']))
             if not tab['year_combo'].currentField():
-                error_messages.append(f"{tab['name']}: Anläggningsår-fält saknas.")
+                error_messages.append(self.tr("{0}: Year field is missing.").format(tab['name']))
             else:
                 # Check that year field is numeric
                 year_field_name = tab['year_combo'].currentField()
                 if not layer.fields().field(year_field_name).isNumeric():
-                    error_messages.append(f"{tab['name']}: Anläggningsår måste vara ett numeriskt fält.")
+                    error_messages.append(self.tr("{0}: Year field must be numeric.").format(tab['name']))
 
             if not tab['dim_combo'].currentField():
-                error_messages.append(f"{tab['name']}: Dimensionsfält saknas.")
+                error_messages.append(self.tr("{0}: Dimension field is missing.").format(tab['name']))
             else:
                 # Check that dimension field is numeric
                 dim_field_name = tab['dim_combo'].currentField()
                 if not layer.fields().field(dim_field_name).isNumeric():
-                    error_messages.append(f"{tab['name']}: Dimension måste vara ett numeriskt fält.")
+                    error_messages.append(self.tr("{0}: Dimension field must be numeric.").format(tab['name']))
 
         if not is_at_least_one_tab_active:
-            error_messages.append("Välj minst en ledningstyp att analysera.")
+            error_messages.append(self.tr("Select at least one pipe type to analyze."))
 
         if error_messages:
             ok_button.setEnabled(False)
-            self.mStatusLabel.setText("Fel: " + " | ".join(error_messages))
+            self.mStatusLabel.setText(self.tr("Error: ") + " | ".join(error_messages))
             self.mStatusLabel.setStyleSheet("color: red;")
         else:
             ok_button.setEnabled(True)
-            self.mStatusLabel.setText("Status: Redo att köra analys.")
+            self.mStatusLabel.setText(self.tr("Status: Ready to run analysis."))
             self.mStatusLabel.setStyleSheet("color: green;")
 
 
