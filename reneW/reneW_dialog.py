@@ -1,7 +1,8 @@
 import os
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog
-from qgis.core import QgsMapLayerProxyModel, QgsProject
+from qgis.PyQt.QtWidgets import QDialog, QDialogButtonBox
+from qgis.PyQt.QtCore import QVariant
+from qgis.core import QgsMapLayerProxyModel, QgsProject, QgsVectorLayer
 
 # This loads your .ui file
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -13,44 +14,64 @@ class ReneWDialog(QDialog, FORM_CLASS):
         super(ReneWDialog, self).__init__(parent)
         self.setupUi(self)
 
+        # --- Tab Configurations ---
+        self.tabs = [
+            {
+                'name': 'Vatten',
+                'check': self.mCheckVatten,
+                'group': self.mGroupVatten,
+                'layer_combo': self.mMapLayerComboVatten,
+                'mat_combo': self.mFieldComboMaterialVatten,
+                'year_combo': self.mFieldComboYearVatten,
+                'dim_combo': self.mFieldComboDimensionVatten,
+            },
+            {
+                'name': 'Spillvatten',
+                'check': self.mCheckSpillvatten,
+                'group': self.mGroupSpillvatten,
+                'layer_combo': self.mMapLayerComboSpillvatten,
+                'mat_combo': self.mFieldComboMaterialSpillvatten,
+                'year_combo': self.mFieldComboYearSpillvatten,
+                'dim_combo': self.mFieldComboDimensionSpillvatten,
+            },
+            {
+                'name': 'Dagvatten',
+                'check': self.mCheckDagvatten,
+                'group': self.mGroupDagvatten,
+                'layer_combo': self.mMapLayerComboDagvatten,
+                'mat_combo': self.mFieldComboMaterialDagvatten,
+                'year_combo': self.mFieldComboYearDagvatten,
+                'dim_combo': self.mFieldComboDimensionDagvatten,
+            }
+        ]
+
         # --- Global Settings ---
         self.mCheckBoxEnableDimensionWeighting.toggled.connect(self.mSpinBoxDimensionFactor.setEnabled)
 
-        # --- Vatten Tab ---
-        self.mCheckVatten.toggled.connect(self.mGroupVatten.setEnabled)
-        self.mMapLayerComboVatten.setFilters(QgsMapLayerProxyModel.VectorLayer)
-        self.mMapLayerComboVatten.layerChanged.connect(self.mFieldComboMaterialVatten.setLayer)
-        self.mMapLayerComboVatten.layerChanged.connect(self.mFieldComboYearVatten.setLayer)
-        self.mMapLayerComboVatten.layerChanged.connect(self.mFieldComboDimensionVatten.setLayer)
-        self.mMapLayerComboVatten.layerChanged.connect(self.mFieldComboRenoYearVatten.setLayer)
-        self.mMapLayerComboVatten.layerChanged.connect(self.mFieldComboRenoMethodVatten.setLayer)
-        self.mGroupVatten.setEnabled(False)
-
-        # --- Spillvatten Tab ---
-        self.mCheckSpillvatten.toggled.connect(self.mGroupSpillvatten.setEnabled)
-        self.mMapLayerComboSpillvatten.setFilters(QgsMapLayerProxyModel.VectorLayer)
-        self.mMapLayerComboSpillvatten.layerChanged.connect(self.mFieldComboMaterialSpillvatten.setLayer)
-        self.mMapLayerComboSpillvatten.layerChanged.connect(self.mFieldComboYearSpillvatten.setLayer)
-        self.mMapLayerComboSpillvatten.layerChanged.connect(self.mFieldComboDimensionSpillvatten.setLayer)
-        self.mMapLayerComboSpillvatten.layerChanged.connect(self.mFieldComboRenoYearSpillvatten.setLayer)
-        self.mMapLayerComboSpillvatten.layerChanged.connect(self.mFieldComboRenoMethodSpillvatten.setLayer)
-        self.mGroupSpillvatten.setEnabled(False)
-
-        # --- Dagvatten Tab ---
-        self.mCheckDagvatten.toggled.connect(self.mGroupDagvatten.setEnabled)
-        self.mMapLayerComboDagvatten.setFilters(QgsMapLayerProxyModel.VectorLayer)
-        self.mMapLayerComboDagvatten.layerChanged.connect(self.mFieldComboMaterialDagvatten.setLayer)
-        self.mMapLayerComboDagvatten.layerChanged.connect(self.mFieldComboYearDagvatten.setLayer)
-        self.mMapLayerComboDagvatten.layerChanged.connect(self.mFieldComboDimensionDagvatten.setLayer)
-        self.mMapLayerComboDagvatten.layerChanged.connect(self.mFieldComboRenoYearDagvatten.setLayer)
-        self.mMapLayerComboDagvatten.layerChanged.connect(self.mFieldComboRenoMethodDagvatten.setLayer)
-        self.mGroupDagvatten.setEnabled(False)
+        # --- Setup each tab ---
+        for tab in self.tabs:
+            tab['check'].toggled.connect(tab['group'].setEnabled)
+            tab['layer_combo'].setFilters(QgsMapLayerProxyModel.VectorLayer)
+            tab['layer_combo'].layerChanged.connect(tab['mat_combo'].setLayer)
+            tab['layer_combo'].layerChanged.connect(tab['year_combo'].setLayer)
+            tab['layer_combo'].layerChanged.connect(tab['dim_combo'].setLayer)
+            # Connect validation signals
+            tab['check'].toggled.connect(self._validate_inputs)
+            tab['layer_combo'].layerChanged.connect(self._validate_inputs)
+            tab['mat_combo'].fieldChanged.connect(self._validate_inputs)
+            tab['year_combo'].fieldChanged.connect(self._validate_inputs)
+            tab['dim_combo'].fieldChanged.connect(self._validate_inputs)
+            # Set initial state
+            tab['group'].setEnabled(False)
 
         # --- Hotspot Analysis Settings ---
         self.mCheckHotspot.toggled.connect(self.mSpinBoxHotspotThreshold.setEnabled)
         self.mCheckHotspot.toggled.connect(self.mSpinBoxHotspotDistance.setEnabled)
         self.mSpinBoxHotspotThreshold.setEnabled(False)
         self.mSpinBoxHotspotDistance.setEnabled(False)
+
+        # --- Set initial validation state ---
+        self._validate_inputs()
 
 
     # --- Getter methods for global settings ---
@@ -102,6 +123,62 @@ class ReneWDialog(QDialog, FORM_CLASS):
             })
 
         return configs
+
+    # --- Validation Logic ---
+    def _validate_inputs(self):
+        """
+        Checks the state of the dialog's inputs and enables/disables the OK button.
+        Updates the status label with guidance for the user.
+        """
+        ok_button = self.mButtonBox.button(QDialogButtonBox.Ok)
+        if not ok_button:
+            return
+
+        error_messages = []
+        is_at_least_one_tab_active = False
+
+        for tab in self.tabs:
+            if not tab['check'].isChecked():
+                continue
+
+            is_at_least_one_tab_active = True
+            layer = tab['layer_combo'].currentLayer()
+
+            if not isinstance(layer, QgsVectorLayer):
+                error_messages.append(f"{tab['name']}: Inget lager valt.")
+                continue
+
+            # Check that required fields are selected
+            if not tab['mat_combo'].currentField():
+                error_messages.append(f"{tab['name']}: Materialfält saknas.")
+            if not tab['year_combo'].currentField():
+                error_messages.append(f"{tab['name']}: Anläggningsår-fält saknas.")
+            else:
+                # Check that year field is numeric
+                year_field_name = tab['year_combo'].currentField()
+                if not layer.fields().field(year_field_name).isNumeric():
+                    error_messages.append(f"{tab['name']}: Anläggningsår måste vara ett numeriskt fält.")
+
+            if not tab['dim_combo'].currentField():
+                error_messages.append(f"{tab['name']}: Dimensionsfält saknas.")
+            else:
+                # Check that dimension field is numeric
+                dim_field_name = tab['dim_combo'].currentField()
+                if not layer.fields().field(dim_field_name).isNumeric():
+                    error_messages.append(f"{tab['name']}: Dimension måste vara ett numeriskt fält.")
+
+        if not is_at_least_one_tab_active:
+            error_messages.append("Välj minst en ledningstyp att analysera.")
+
+        if error_messages:
+            ok_button.setEnabled(False)
+            self.mStatusLabel.setText("Fel: " + " | ".join(error_messages))
+            self.mStatusLabel.setStyleSheet("color: red;")
+        else:
+            ok_button.setEnabled(True)
+            self.mStatusLabel.setText("Status: Redo att köra analys.")
+            self.mStatusLabel.setStyleSheet("color: green;")
+
 
     # --- Getter methods for hotspot settings ---
     def isHotspotAnalysisEnabled(self) -> bool:
