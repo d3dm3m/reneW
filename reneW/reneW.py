@@ -155,25 +155,36 @@ class ReneW:
                     age = max(0, current_year - installation_year)
 
                     # Check for renovation data and override age if applicable
-                    if reno_method_idx != -1 and reno_year_idx != -1:
-                        reno_method = attrs[reno_method_idx]
-                        if reno_method and isinstance(reno_method, str):
-                            # If method is a form of relining, use the renovation year
-                            if 'infodring' in reno_method.lower() or 'strumpa' in reno_method.lower():
-                                try:
-                                    reno_year = int(attrs[reno_year_idx])
-                                    # Override age if renovation year is valid
-                                    age = max(0, current_year - reno_year)
-                                except (ValueError, TypeError, AttributeError):
-                                    pass # Keep original age
+                    if config.get('reno_method_field') and config.get('reno_year_field'):
+                        reno_method_idx = fields.indexFromName(config['reno_method_field'])
+                        reno_year_idx = fields.indexFromName(config['reno_year_field'])
 
-                    try:
-                        dimension = float(attrs[dimension_idx])
-                    except (ValueError, TypeError, AttributeError):
-                        dimension = 0.0
+                        if reno_method_idx != -1 and reno_year_idx != -1:
+                            reno_method = attrs[reno_method_idx]
+                            if reno_method and isinstance(reno_method, str):
+                                if 'infodring' in reno_method.lower() or 'strumpa' in reno_method.lower():
+                                    try:
+                                        reno_year = int(attrs[reno_year_idx])
+                                        age = max(0, current_year - reno_year)
+                                    except (ValueError, TypeError, AttributeError):
+                                        pass # Keep original age if reno year is invalid
+
+                    # Handle dimension parsing (e.g., "225_I")
+                    dimension_val = attrs[dimension_idx]
+                    dimension = 0.0
+                    if isinstance(dimension_val, (int, float)):
+                        dimension = float(dimension_val)
+                    elif isinstance(dimension_val, str):
+                        try:
+                            # Extract numeric part before any non-numeric characters
+                            numeric_part = ''.join(filter(lambda c: c.isdigit() or c == '.', dimension_val.split('_')[0].split('/')[0]))
+                            if numeric_part:
+                                dimension = float(numeric_part)
+                        except (ValueError, TypeError):
+                            dimension = 0.0
 
                     renewal_need = calculation_logic.calculate_renewal_need(
-                        pipeline_type=calc_pipeline_type,
+                        pipeline_type=layer_type, # Pass the specific layer type
                         material=material,
                         age=age,
                         year=installation_year,
