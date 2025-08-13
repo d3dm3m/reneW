@@ -287,28 +287,28 @@ class ReneWDialog(QDialog, FORM_CLASS):
             tab['check'].setChecked(project.readBoolEntry(
                 'reneW', f'{prefix}_enabled', False)[0])
             set_layer_if_exists(tab['layer_combo'], project.readEntry(
-                'reneW', f'{prefix}_layer', ''))
+                'reneW', f'{prefix}_layer', '')[0])
             tab['mat_combo'].setField(project.readEntry(
-                'reneW', f'{prefix}_materialField', ''))
+                'reneW', f'{prefix}_materialField', '')[0])
             tab['year_combo'].setField(project.readEntry(
-                'reneW', f'{prefix}_yearField', ''))
+                'reneW', f'{prefix}_yearField', '')[0])
             tab['dim_combo'].setField(project.readEntry(
-                'reneW', f'{prefix}_dimensionField', ''))
+                'reneW', f'{prefix}_dimensionField', '')[0])
             tab['reno_year_combo'].setField(project.readEntry(
-                'reneW', f'{prefix}_renoYearField', ''))
+                'reneW', f'{prefix}_renoYearField', '')[0])
             tab['reno_method_combo'].setField(project.readEntry(
-                'reneW', f'{prefix}_renoMethodField', ''))
+                'reneW', f'{prefix}_renoMethodField', '')[0])
 
         # Global settings
         self.mCheckBoxEnableDimensionWeighting.setChecked(
             project.readBoolEntry('reneW', 'dimensionWeightingEnabled', False)[0])
         self.mSpinBoxDimensionFactor.setValue(
-            project.readDoubleEntry('reneW', 'dimensionFactor', 0.001))
+            project.readDoubleEntry('reneW', 'dimensionFactor', 0.001)[0])
 
         # Hotspot settings
         self.mCheckHotspot.setChecked(
             project.readBoolEntry('reneW', 'hotspotEnabled', False)[0])
         self.mSpinBoxHotspotThreshold.setValue(
-            project.readDoubleEntry('reneW', 'hotspotThreshold', 0.5))
+            project.readDoubleEntry('reneW', 'hotspotThreshold', 0.5)[0])
         self.mSpinBoxHotspotDistance.setValue(
-            project.readDoubleEntry('reneW', 'hotspotDistance', 5.0))
+            project.readDoubleEntry('reneW', 'hotspotDistance', 5.0)[0])

@@ -157,12 +157,15 @@ class TestReneWDialog(unittest.TestCase):
         # --- Test Load ---
         # Mock the return values from project settings
         def read_entry_side_effect(group, key, default):
-            if key == 'tab_Water_layer': return 'layer123'
-            if key == 'tab_Water_materialField': return 'material_field'
-            return default
+            if key == 'tab_Water_layer':
+                return ('layer123', True)
+            if key == 'tab_Water_materialField':
+                return ('material_field', True)
+            return (default, True)
 
         mock_project.readBoolEntry.return_value = (True, True)
         mock_project.readEntry.side_effect = read_entry_side_effect
+        mock_project.readDoubleEntry.return_value = (0.5, True)
 
         # Mock the setLayer method
         with unittest.mock.patch('qgis.core.QgsProject.instance', return_value=mock_project):
