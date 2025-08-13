@@ -6,8 +6,7 @@ from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtCore import QVariant, QCoreApplication, Qt
 from qgis.core import (
     QgsProject, QgsVectorLayer, QgsField, QgsGeometry, QgsFeature,
-    QgsFillSymbol, QgsSimpleFillSymbolLayer, QgsMessageLog, Qgis)
-from qgis.gui import QgsBlurEffect
+    QgsFillSymbol, QgsSimpleFillSymbolLayer, QgsMessageLog, Qgis, QgsBlurEffect)
 
 # Import the code for the dialog and the calculation logic
 from .reneW_dialog import ReneWDialog
