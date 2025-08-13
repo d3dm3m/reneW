@@ -237,7 +237,7 @@ class ReneWDialog(QDialog, FORM_CLASS):
 
         for tab in self.tabs:
             prefix = f"tab_{tab['name']}"
-            project.writeEntry(
+            project.writeEntryBool(
                 'reneW', f'{prefix}_enabled', tab['check'].isChecked())
             if tab['layer_combo'].currentLayer():
                 project.writeEntry(
@@ -254,16 +254,16 @@ class ReneWDialog(QDialog, FORM_CLASS):
                 'reneW', f'{prefix}_renoMethodField', tab['reno_method_combo'].currentField())
 
         # Global settings
-        project.writeEntry('reneW', 'dimensionWeightingEnabled',
+        project.writeEntryBool('reneW', 'dimensionWeightingEnabled',
                            self.useDimensionWeighting())
-        project.writeEntry('reneW', 'dimensionFactor', self.dimensionFactor())
+        project.writeEntryDouble('reneW', 'dimensionFactor', self.dimensionFactor())
 
         # Hotspot settings
-        project.writeEntry('reneW', 'hotspotEnabled',
+        project.writeEntryBool('reneW', 'hotspotEnabled',
                            self.isHotspotAnalysisEnabled())
-        project.writeEntry('reneW', 'hotspotThreshold',
+        project.writeEntryDouble('reneW', 'hotspotThreshold',
                            self.getHotspotThreshold())
-        project.writeEntry('reneW', 'hotspotDistance',
+        project.writeEntryDouble('reneW', 'hotspotDistance',
                            self.getHotspotDistance())
 
     def load_settings(self):

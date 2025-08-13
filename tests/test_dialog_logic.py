@@ -149,13 +149,23 @@ class TestReneWDialog(unittest.TestCase):
         mock_tab['mat_combo'].currentField.return_value = 'material_field'
 
         mock_project = MagicMock()
-        with unittest.mock.patch('qgis.core.QgsProject.instance', return_value=mock_project):
+        with unittest.mock.patch.object(self.dialog, 'useDimensionWeighting', return_value=True), \
+             unittest.mock.patch.object(self.dialog, 'dimensionFactor', return_value=0.005), \
+             unittest.mock.patch.object(self.dialog, 'isHotspotAnalysisEnabled', return_value=True), \
+             unittest.mock.patch.object(self.dialog, 'getHotspotThreshold', return_value=0.8), \
+             unittest.mock.patch.object(self.dialog, 'getHotspotDistance', return_value=10.0), \
+             unittest.mock.patch('qgis.core.QgsProject.instance', return_value=mock_project):
             self.dialog.save_settings()
 
-            # Check that settings were written with dynamic keys
-            mock_project.writeEntry.assert_any_call('reneW', 'tab_Water_enabled', True)
+            # Check that the correct type-specific methods were called
+            mock_project.writeEntryBool.assert_any_call('reneW', 'tab_Water_enabled', True)
             mock_project.writeEntry.assert_any_call('reneW', 'tab_Water_layer', 'layer123')
             mock_project.writeEntry.assert_any_call('reneW', 'tab_Water_materialField', 'material_field')
+            mock_project.writeEntryBool.assert_any_call('reneW', 'dimensionWeightingEnabled', True)
+            mock_project.writeEntryDouble.assert_any_call('reneW', 'dimensionFactor', 0.005)
+            mock_project.writeEntryBool.assert_any_call('reneW', 'hotspotEnabled', True)
+            mock_project.writeEntryDouble.assert_any_call('reneW', 'hotspotThreshold', 0.8)
+            mock_project.writeEntryDouble.assert_any_call('reneW', 'hotspotDistance', 10.0)
 
         # --- Test Load ---
         # Mock the return values from project settings
