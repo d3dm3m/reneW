@@ -5,6 +5,36 @@ based on the Herz survival function model.
 """
 import os
 import json
+import re
+
+
+def _parse_dimension(dim_value) -> float:
+    """
+    Parses a dimension value, which can be a number or a string
+    like '200_O', and returns a float.
+    Returns 0.0 if parsing fails.
+    """
+    if isinstance(dim_value, (int, float)):
+        return float(dim_value)
+
+    if not isinstance(dim_value, str):
+        return 0.0
+
+    # Try direct conversion first for cases like "50"
+    try:
+        return float(dim_value)
+    except (ValueError, TypeError):
+        pass  # Proceed to regex matching
+
+    # Use regex to find the leading number in strings like "200_O"
+    match = re.match(r'^\s*(\d+(\.\d+)?)\s*', str(dim_value))
+    if match:
+        try:
+            return float(match.group(1))
+        except (ValueError, TypeError):
+            return 0.0
+    return 0.0
+
 
 # Global variable to hold the loaded parameters
 CONFIG_DATA = None
@@ -87,7 +117,7 @@ def calculate_renewal_need(
         material: str,
         age: int,
         year: int,
-        dimension: float,
+        dimension: any,
         use_dimension_weighting: bool,
         dimension_factor: float) -> float:
     """
@@ -95,6 +125,7 @@ def calculate_renewal_need(
     age, using the Herz survival model, and optionally applies a
     dimension-based weighting.
     """
+    parsed_dimension = _parse_dimension(dimension)
     params = find_material_params(material, year, pipeline_type)
 
     if not params:
@@ -124,11 +155,11 @@ def calculate_renewal_need(
 
     renewal_need = 1.0 - survival_probability
 
-    if use_dimension_weighting and dimension > 0 and dimension_factor > 0:
+    if use_dimension_weighting and parsed_dimension > 0 and dimension_factor > 0:
         # Apply weighting factor, ensuring it doesn't lead to an excessive score
         # The formula is Renewal Need * (1 + (Dimension * Factor))
         # The factor is typically small (e.g., 0.001)
-        weight = 1.0 + (dimension * dimension_factor)
+        weight = 1.0 + (parsed_dimension * dimension_factor)
         final_need = renewal_need * weight
         return final_need
 

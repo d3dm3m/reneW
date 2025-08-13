@@ -204,12 +204,6 @@ class ReneWDialog(QDialog, FORM_CLASS):
             if not tab['dim_combo'].currentField():
                 error_messages.append(
                     self.tr("{0}: Dimension field is missing.").format(tab['name']))
-            else:
-                # Check that dimension field is numeric
-                dim_field_name = tab['dim_combo'].currentField()
-                if not layer.fields().field(dim_field_name).isNumeric():
-                    error_messages.append(self.tr(
-                        "{0}: Dimension field must be numeric.").format(tab['name']))
 
         if not is_at_least_one_tab_active:
             error_messages.append(

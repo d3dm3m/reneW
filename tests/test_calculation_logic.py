@@ -116,6 +116,31 @@ class TestCalculationLogic(unittest.TestCase):
         # expected = 0.4630 * 1.1 = 0.5093
         self.assertAlmostEqual(renewal_need_weighted, 0.5093, places=4)
 
+    def test_parse_dimension(self):
+        """Test the dimension parsing logic for various formats."""
+        # Test with standard numeric types
+        self.assertAlmostEqual(calculation_logic._parse_dimension(200), 200.0)
+        self.assertAlmostEqual(calculation_logic._parse_dimension(150.5), 150.5)
+
+        # Test with string numbers
+        self.assertAlmostEqual(calculation_logic._parse_dimension("50"), 50.0)
+        self.assertAlmostEqual(calculation_logic._parse_dimension("75.5"), 75.5)
+
+        # Test with user-provided formats
+        self.assertAlmostEqual(calculation_logic._parse_dimension("200_O"), 200.0)
+        self.assertAlmostEqual(calculation_logic._parse_dimension("100_I"), 100.0)
+
+        # Test with leading/trailing whitespace
+        self.assertAlmostEqual(calculation_logic._parse_dimension("  300  "), 300.0)
+        self.assertAlmostEqual(calculation_logic._parse_dimension("  250_I  "), 250.0)
+
+        # Test with invalid formats
+        self.assertAlmostEqual(calculation_logic._parse_dimension("abc"), 0.0)
+        self.assertAlmostEqual(calculation_logic._parse_dimension("_O"), 0.0)
+        self.assertAlmostEqual(calculation_logic._parse_dimension("I_100"), 0.0)
+        self.assertAlmostEqual(calculation_logic._parse_dimension(None), 0.0)
+        self.assertAlmostEqual(calculation_logic._parse_dimension(""), 0.0)
+
     def test_missing_parameters_file(self):
         """Test behavior when parameters.json is missing."""
         # Rename the file to simulate it being missing

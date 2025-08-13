@@ -22,6 +22,8 @@ mock_form_class = type('MockForm', (object,), {'setupUi': lambda self, widget: N
 mock_qdialog = type('MockQDialog', (object,), {'accept': lambda self: None})
 MOCK_MODULES['qgis.PyQt'].uic.loadUiType.return_value = (mock_form_class, object)
 MOCK_MODULES['qgis.PyQt.QtWidgets'].QDialog = mock_qdialog
+mock_qgsvectorlayer = type('MockQgsVectorLayer', (object,), {})
+MOCK_MODULES['qgis.core'].QgsVectorLayer = mock_qgsvectorlayer
 MOCK_MODULES['qgis.PyQt.QtCore'].QSettings.return_value.value.return_value = 'en'
 # --- End of Mocking ---
 
@@ -124,6 +126,7 @@ class TestReneWDialog(unittest.TestCase):
         self.dialog.mButtonBox = MagicMock()
         self.dialog.mStatusLabel = MagicMock()
         self.dialog.tabs = []
+        self.dialog.tr = lambda x: x  # Mock the translation function
 
     def test_save_and_load_settings(self):
         """Test that settings are saved and loaded with dynamic keys."""
@@ -175,6 +178,94 @@ class TestReneWDialog(unittest.TestCase):
             mock_tab['check'].setChecked.assert_called_with(True)
             mock_tab['mat_combo'].setField.assert_called_with('material_field')
 
+    def test_validation_logic_valid_case(self):
+        """Test validation logic: Valid inputs with a text dimension field."""
+        # --- Setup Mocks ---
+        mock_ok_button = MagicMock()
+        self.dialog.mButtonBox.button.return_value = mock_ok_button
 
-if __name__ == '__main__':
-    unittest.main()
+        mock_numeric_field = MagicMock()
+        mock_numeric_field.isNumeric.return_value = True
+        mock_text_field = MagicMock()
+        mock_text_field.isNumeric.return_value = False
+
+        mock_layer = MOCK_MODULES['qgis.core'].QgsVectorLayer()
+        mock_layer.fields = MagicMock()
+        def field_side_effect(name):
+            if name == 'year_field': return mock_numeric_field
+            if name == 'dim_field_text': return mock_text_field
+            return MagicMock()
+        mock_layer.fields.return_value.field.side_effect = field_side_effect
+
+        mock_tab = {
+            'name': 'Water',
+            'check': MagicMock(isChecked=lambda: True),
+            'layer_combo': MagicMock(currentLayer=lambda: mock_layer),
+            'mat_combo': MagicMock(currentField=lambda: 'mat_field'),
+            'year_combo': MagicMock(currentField=lambda: 'year_field'),
+            'dim_combo': MagicMock(currentField=lambda: 'dim_field_text'),
+        }
+        self.dialog.tabs = [mock_tab]
+
+        # --- Run Validation ---
+        self.dialog._validate_inputs()
+
+        # --- Assert ---
+        mock_ok_button.setEnabled.assert_called_with(True)
+        self.dialog.mStatusLabel.setText.assert_called_with(
+            "Status: Ready to run analysis.")
+
+    def test_validation_logic_missing_field(self):
+        """Test validation logic: Missing a required field."""
+        # --- Setup Mocks ---
+        mock_ok_button = MagicMock()
+        self.dialog.mButtonBox.button.return_value = mock_ok_button
+        mock_layer = MOCK_MODULES['qgis.core'].QgsVectorLayer()
+        mock_tab = {
+            'name': 'Water',
+            'check': MagicMock(isChecked=lambda: True),
+            'layer_combo': MagicMock(currentLayer=lambda: mock_layer),
+            'mat_combo': MagicMock(currentField=lambda: 'mat_field'),
+            'year_combo': MagicMock(currentField=lambda: ''), # Missing year
+            'dim_combo': MagicMock(currentField=lambda: 'dim_field'),
+        }
+        self.dialog.tabs = [mock_tab]
+
+        # --- Run Validation ---
+        self.dialog._validate_inputs()
+
+        # --- Assert ---
+        mock_ok_button.setEnabled.assert_called_with(False)
+        self.dialog.mStatusLabel.setText.assert_called_with(
+            "Error: " + "{0}: Year field is missing.".format('Water'))
+
+    def test_validation_logic_non_numeric_year(self):
+        """Test validation logic: Non-numeric year field."""
+        # --- Setup Mocks ---
+        mock_ok_button = MagicMock()
+        self.dialog.mButtonBox.button.return_value = mock_ok_button
+
+        mock_non_numeric_field = MagicMock()
+        mock_non_numeric_field.isNumeric.return_value = False
+
+        mock_layer = MOCK_MODULES['qgis.core'].QgsVectorLayer()
+        mock_layer.fields = MagicMock()
+        mock_layer.fields.return_value.field.return_value = mock_non_numeric_field
+
+        mock_tab = {
+            'name': 'Water',
+            'check': MagicMock(isChecked=lambda: True),
+            'layer_combo': MagicMock(currentLayer=lambda: mock_layer),
+            'mat_combo': MagicMock(currentField=lambda: 'mat_field'),
+            'year_combo': MagicMock(currentField=lambda: 'year_field'),
+            'dim_combo': MagicMock(currentField=lambda: 'dim_field'),
+        }
+        self.dialog.tabs = [mock_tab]
+
+        # --- Run Validation ---
+        self.dialog._validate_inputs()
+
+        # --- Assert ---
+        mock_ok_button.setEnabled.assert_called_with(False)
+        self.dialog.mStatusLabel.setText.assert_called_with(
+            "Error: " + "{0}: Year field must be numeric.".format('Water'))
