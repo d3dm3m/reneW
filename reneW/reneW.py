@@ -6,7 +6,7 @@ from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtCore import QVariant, QCoreApplication, Qt
 from qgis.core import (
     QgsProject, QgsVectorLayer, QgsField, QgsGeometry, QgsFeature,
-    QgsFillSymbol, QgsSimpleFill, QgsMessageLog, Qgis)
+    QgsFillSymbol, QgsSimpleFillSymbolLayer, QgsMessageLog, Qgis)
 from qgis.gui import QgsBlurEffect
 
 # Import the code for the dialog and the calculation logic
@@ -416,7 +416,7 @@ class ReneW:
         # Glow layers (multiple blurred layers)
         # The blur radius and color can be adjusted for different visual effects
         for blur_radius, opacity, color in [(12, 20, '255,50,50'), (8, 40, '255,0,0'), (4, 70, '200,0,0')]:
-            glow_fill = QgsSimpleFill.create(
+            glow_fill = QgsSimpleFillSymbolLayer.create(
                 {'color': f'{color},{opacity}', 'style': 'solid'})
 
             blur_effect = QgsBlurEffect()
