@@ -285,7 +285,7 @@ class ReneWDialog(QDialog, FORM_CLASS):
         for tab in self.tabs:
             prefix = f"tab_{tab['name']}"
             tab['check'].setChecked(project.readBoolEntry(
-                'reneW', f'{prefix}_enabled', False))
+                'reneW', f'{prefix}_enabled', False)[0])
             set_layer_if_exists(tab['layer_combo'], project.readEntry(
                 'reneW', f'{prefix}_layer', ''))
             tab['mat_combo'].setField(project.readEntry(
@@ -301,13 +301,13 @@ class ReneWDialog(QDialog, FORM_CLASS):
 
         # Global settings
         self.mCheckBoxEnableDimensionWeighting.setChecked(
-            project.readBoolEntry('reneW', 'dimensionWeightingEnabled', False))
+            project.readBoolEntry('reneW', 'dimensionWeightingEnabled', False)[0])
         self.mSpinBoxDimensionFactor.setValue(
             project.readDoubleEntry('reneW', 'dimensionFactor', 0.001))
 
         # Hotspot settings
         self.mCheckHotspot.setChecked(
-            project.readBoolEntry('reneW', 'hotspotEnabled', False))
+            project.readBoolEntry('reneW', 'hotspotEnabled', False)[0])
         self.mSpinBoxHotspotThreshold.setValue(
             project.readDoubleEntry('reneW', 'hotspotThreshold', 0.5))
         self.mSpinBoxHotspotDistance.setValue(

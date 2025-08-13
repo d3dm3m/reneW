@@ -161,7 +161,7 @@ class TestReneWDialog(unittest.TestCase):
             if key == 'tab_Water_materialField': return 'material_field'
             return default
 
-        mock_project.readBoolEntry.return_value = True
+        mock_project.readBoolEntry.return_value = (True, True)
         mock_project.readEntry.side_effect = read_entry_side_effect
 
         # Mock the setLayer method
