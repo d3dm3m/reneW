@@ -19,14 +19,11 @@ class ParameterEditorDialog(QDialog, FORM_CLASS):
         self.data = {}
         self._load_data()
         self._populate_combo()
-        self._populate_municipalities_table()
 
         # Connect signals
         self.mPipeTypeCombo.currentIndexChanged.connect(self._populate_table)
-        self.mBtnAddMaterialRow.clicked.connect(self._add_material_row)
-        self.mBtnRemoveMaterialRow.clicked.connect(self._remove_material_row)
-        self.mBtnAddMunicipalityRow.clicked.connect(self._add_municipality_row)
-        self.mBtnRemoveMunicipalityRow.clicked.connect(self._remove_municipality_row)
+        self.mBtnAddRow.clicked.connect(self._add_row)
+        self.mBtnRemoveRow.clicked.connect(self._remove_row)
         self.mButtonBox.accepted.connect(self.accept)
 
         # Initial population
@@ -38,142 +35,89 @@ class ParameterEditorDialog(QDialog, FORM_CLASS):
             with open(self.param_file, 'r', encoding='utf-8') as f:
                 self.data = json.load(f)
         except (IOError, json.JSONDecodeError):
-            # In case of error, start with empty data
-            self.data = {"parameter_sets": [], "municipalities": []}
+            self.data = {"water": {}, "sewer": {"spill": {}, "storm": {}}}
 
     def _populate_combo(self):
         """Populates the pipe type combo box."""
         self.mPipeTypeCombo.clear()
-        for param_set in self.data.get('parameter_sets', []):
-            self.mPipeTypeCombo.addItem(param_set.get('name'))
+        self.mPipeTypeCombo.addItem("water")
+        self.mPipeTypeCombo.addItem("sewer/spill")
+        self.mPipeTypeCombo.addItem("sewer/storm")
 
     def _populate_table(self):
         """Populates the materials table based on the selected pipe type."""
-        self.mMaterialsTable.setRowCount(0)  # Clear table
+        self.mMaterialsTable.setRowCount(0)
 
-        selected_type = self.mPipeTypeCombo.currentText()
-        if not selected_type:
+        selected_path = self.mPipeTypeCombo.currentText()
+        if not selected_path:
             return
 
-        # Find the selected parameter set
-        param_set = next((s for s in self.data.get(
-            'parameter_sets', []) if s['name'] == selected_type), None)
-        if not param_set:
+        # Get the materials dictionary from the nested structure
+        path_parts = selected_path.split('/')
+        materials_dict = self.data
+        for part in path_parts:
+            materials_dict = materials_dict.get(part, {})
+
+        if not isinstance(materials_dict, dict):
             return
 
-        materials = param_set.get('materials', [])
-        self.mMaterialsTable.setRowCount(len(materials))
+        self.mMaterialsTable.setRowCount(len(materials_dict))
 
-        for row_idx, material in enumerate(materials):
-            self.mMaterialsTable.setItem(
-                row_idx, 0, QTableWidgetItem(material.get('key', '')))
-            self.mMaterialsTable.setItem(row_idx, 1, QTableWidgetItem(
-                ",".join(material.get('keywords', []))))
-            self.mMaterialsTable.setItem(
-                row_idx, 2, QTableWidgetItem(str(material.get('year_min', ''))))
-            self.mMaterialsTable.setItem(
-                row_idx, 3, QTableWidgetItem(str(material.get('year_max', ''))))
-            self.mMaterialsTable.setItem(row_idx, 4, QTableWidgetItem(
-                str(material.get('params', {}).get('a', ''))))
-            self.mMaterialsTable.setItem(row_idx, 5, QTableWidgetItem(
-                str(material.get('params', {}).get('b', ''))))
-            self.mMaterialsTable.setItem(row_idx, 6, QTableWidgetItem(
-                str(material.get('params', {}).get('c', ''))))
+        for row_idx, (key, params) in enumerate(materials_dict.items()):
+            self.mMaterialsTable.setItem(row_idx, 0, QTableWidgetItem(key))
+            self.mMaterialsTable.setItem(row_idx, 1, QTableWidgetItem(str(params.get('mu', ''))))
+            self.mMaterialsTable.setItem(row_idx, 2, QTableWidgetItem(str(params.get('sigma', ''))))
 
         self.mMaterialsTable.resizeColumnsToContents()
 
-    def _populate_municipalities_table(self):
-        """Populates the municipalities table."""
-        self.mMunicipalitiesTable.setRowCount(0)
-        municipalities = self.data.get('municipalities', [])
-        self.mMunicipalitiesTable.setRowCount(len(municipalities))
-
-        for row_idx, municipality in enumerate(municipalities):
-            self.mMunicipalitiesTable.setItem(
-                row_idx, 0, QTableWidgetItem(str(municipality.get('code', ''))))
-            self.mMunicipalitiesTable.setItem(
-                row_idx, 1, QTableWidgetItem(municipality.get('name', '')))
-
-        self.mMunicipalitiesTable.resizeColumnsToContents()
-
-    def _add_material_row(self):
-        """Adds a new empty row to the materials table."""
+    def _add_row(self):
+        """Adds a new empty row to the table."""
         row_count = self.mMaterialsTable.rowCount()
         self.mMaterialsTable.insertRow(row_count)
 
-    def _remove_material_row(self):
-        """Removes the currently selected row from the materials table."""
+    def _remove_row(self):
+        """Removes the currently selected row from the table."""
         current_row = self.mMaterialsTable.currentRow()
         if current_row >= 0:
             self.mMaterialsTable.removeRow(current_row)
 
-    def _add_municipality_row(self):
-        """Adds a new empty row to the municipalities table."""
-        row_count = self.mMunicipalitiesTable.rowCount()
-        self.mMunicipalitiesTable.insertRow(row_count)
-
-    def _remove_municipality_row(self):
-        """Removes the currently selected row from the municipalities table."""
-        current_row = self.mMunicipalitiesTable.currentRow()
-        if current_row >= 0:
-            self.mMunicipalitiesTable.removeRow(current_row)
-
     def accept(self):
-        """Saves all data back to the json file and closes."""
-        # Save materials data
-        selected_type = self.mPipeTypeCombo.currentText()
-        if selected_type:
-            param_set = next((s for s in self.data.get(
-                'parameter_sets', []) if s['name'] == selected_type), None)
-            if param_set:
-                new_materials = []
-                for row in range(self.mMaterialsTable.rowCount()):
-                    material = {}
-                    try:
-                        material['key'] = self.mMaterialsTable.item(row, 0).text()
-                        material['keywords'] = [
-                            k.strip() for k in self.mMaterialsTable.item(row, 1).text().split(',')]
+        """Saves the table data back to the json file and closes."""
+        selected_path = self.mPipeTypeCombo.currentText()
+        if not selected_path:
+            super(ParameterEditorDialog, self).accept()
+            return
 
-                        year_min = self.mMaterialsTable.item(row, 2).text()
-                        if year_min:
-                            material['year_min'] = int(year_min)
+        # Get the parent dictionary to update
+        path_parts = selected_path.split('/')
+        parent_dict = self.data
+        for part in path_parts[:-1]:
+            parent_dict = parent_dict.get(part, {})
 
-                        year_max = self.mMaterialsTable.item(row, 3).text()
-                        if year_max:
-                            material['year_max'] = int(year_max)
+        leaf_key = path_parts[-1]
 
-                        material['params'] = {
-                            'a': float(self.mMaterialsTable.item(row, 4).text()),
-                            'b': float(self.mMaterialsTable.item(row, 5).text()),
-                            'c': float(self.mMaterialsTable.item(row, 6).text())
-                        }
-                        new_materials.append(material)
-                    except (ValueError, AttributeError):
-                        continue
-                param_set['materials'] = new_materials
-
-        # Save municipalities data
-        new_municipalities = []
-        for row in range(self.mMunicipalitiesTable.rowCount()):
-            municipality = {}
+        new_materials = {}
+        for row in range(self.mMaterialsTable.rowCount()):
             try:
-                code_item = self.mMunicipalitiesTable.item(row, 0)
-                name_item = self.mMunicipalitiesTable.item(row, 1)
+                key_item = self.mMaterialsTable.item(row, 0)
+                mu_item = self.mMaterialsTable.item(row, 1)
+                sigma_item = self.mMaterialsTable.item(row, 2)
 
-                if code_item and name_item and code_item.text() and name_item.text():
-                    municipality['code'] = int(code_item.text())
-                    municipality['name'] = name_item.text()
-                    new_municipalities.append(municipality)
+                if key_item and mu_item and sigma_item and key_item.text():
+                    key = key_item.text()
+                    mu = float(mu_item.text())
+                    sigma = float(sigma_item.text())
+                    new_materials[key] = {'mu': mu, 'sigma': sigma}
             except (ValueError, AttributeError):
                 continue
-        self.data['municipalities'] = new_municipalities
+
+        parent_dict[leaf_key] = new_materials
 
         # Save the updated data back to the file
         try:
             with open(self.param_file, 'w', encoding='utf-8') as f:
                 json.dump(self.data, f, indent=2, ensure_ascii=False)
         except IOError:
-            # Handle save error, maybe show a message box
             pass
 
         super(ParameterEditorDialog, self).accept()

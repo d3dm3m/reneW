@@ -1,10 +1,11 @@
+# test_calculation_logic.py
+import math
 import unittest
-import os
 import sys
+import os
 from unittest.mock import MagicMock
 
 # --- Mock QGIS modules for testing without a QGIS environment ---
-# This block must be before the import of any project files that use QGIS
 MOCK_MODULES = {
     'qgis': MagicMock(),
     'qgis.core': MagicMock(),
@@ -15,155 +16,57 @@ MOCK_MODULES = {
     'qgis.PyQt.QtGui': MagicMock(),
 }
 sys.modules.update(MOCK_MODULES)
-
-# Specifically mock the settings call that happens on import
-MOCK_MODULES['qgis.PyQt.QtCore'].QSettings.return_value.value.return_value = 'en'
 # --- End of Mocking ---
-
 
 # Add the parent directory to the Python path to allow sibling imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from reneW import calculation_logic
-from importlib import reload
+from reneW.calculation_logic import (
+    Cohort,
+    MaterialParams,
+    renewal_for_cohort_period,
+    renewal_totals,
+    decades_from,
+    cumulative_by_period,
+    derive_sigma_from_t50_t10,
+)
+
 
 class TestCalculationLogic(unittest.TestCase):
-    """Test suite for the calculation logic of the reneW plugin."""
+    def test_young_cohort_zero(self):
+        mp = MaterialParams(mu=100.0, sigma=30.0)
+        c = Cohort(length_km=5.0, install_year=2035, material_key="m")
+        # Forecast period before installation → zero
+        r = renewal_for_cohort_period(c, 2020, 2030, mp)
+        self.assertAlmostEqual(r, 0.0, places=9)
 
-    @classmethod
-    def setUpClass(cls):
-        """Load the original parameters file content once for all tests."""
-        cls.original_params_path = os.path.join(
-            os.path.dirname(__file__), '..', 'reneW', 'parameters.json'
-        )
-        # Ensure the file exists before trying to read it
-        if os.path.exists(cls.original_params_path):
-            with open(cls.original_params_path, 'r') as f:
-                cls.original_params_content = f.read()
-        else:
-            cls.original_params_content = None
+    def test_pe_small_renewal_early(self):
+        # Water PE defaults
+        pe = MaterialParams(mu=125.6, sigma=27.7)
+        c = Cohort(length_km=10.0, install_year=2000, material_key="pe")
+        # Early horizon: 2020-2030 should be extremely small
+        r = renewal_for_cohort_period(c, 2020, 2030, pe)
+        self.assertLess(r, 0.05)  # should be near zero
 
-    def tearDown(self):
-        """Ensure the original parameters file is restored after each test."""
-        if self.original_params_content is not None:
-            with open(self.original_params_path, 'w') as f:
-                f.write(self.original_params_content)
-        # Reload the module to ensure it's in a clean state for the next test
-        reload(calculation_logic)
+    def test_cumulative_approaches_length(self):
+        mp = MaterialParams(mu=100.0, sigma=25.0)
+        c = Cohort(length_km=12.5, install_year=2000, material_key="m")
+        periods = decades_from(2000, 40)  # 400 years
+        totals = renewal_totals([c], periods, {"m": mp})
+        self.assertAlmostEqual(sum(totals), 12.5, places=3)
 
-    def test_config_loaded_successfully(self):
-        """Test that the parameters.json file is loaded correctly."""
-        # The module is loaded at startup, so we just check the state.
-        reload(calculation_logic) # Ensure fresh load
-        self.assertIsNotNone(calculation_logic.CONFIG_DATA, "CONFIG_DATA should be loaded.")
-        self.assertIsNone(calculation_logic.get_config_error(), "CONFIG_ERROR should be None on successful load.")
-        self.assertIn('parameter_sets', calculation_logic.CONFIG_DATA)
+    def test_clamping_bounds(self):
+        mp = MaterialParams(mu=50.0, sigma=5.0)
+        c = Cohort(length_km=1.0, install_year=1900, material_key="m")
+        # Very long future window should not exceed the cohort length
+        r = renewal_for_cohort_period(c, 1900, 2500, mp)
+        self.assertLessEqual(r, 1.0)
+        self.assertGreaterEqual(r, 0.0)
 
-    def test_find_material_params(self):
-        """Test the parameter lookup logic."""
-        # Test case 1: Simple match for Vatten (Water)
-        params = calculation_logic.find_material_params('PE-rör', 2010, 'Vatten')
-        self.assertIsNotNone(params)
-        self.assertAlmostEqual(params['a'], 106.9383234418553)
-
-        # Test case 2: Match with year constraint
-        params = calculation_logic.find_material_params('PVC', 1965, 'Vatten')
-        self.assertIsNotNone(params)
-        self.assertAlmostEqual(params['a'], 5.9999999999999982) # Should match PVC < 1970
-
-        params = calculation_logic.find_material_params('pvc-ledning', 1975, 'Vatten')
-        self.assertIsNotNone(params)
-        self.assertAlmostEqual(params['a'], 55.490601649355284) # Should match PVC >= 1970
-
-        # Test case 3: Match for Spillvatten (Foul Water)
-        params = calculation_logic.find_material_params('Betong', 1960, 'Spillvatten')
-        self.assertIsNotNone(params)
-        self.assertAlmostEqual(params['a'], 2.2095582333960015) # Should match Betong 1950-1969
-
-        # Test case 4: Fallback to default
-        params = calculation_logic.find_material_params('Okänt material', 2000, 'Dagvatten')
-        self.assertIsNotNone(params)
-        # Check against the default 'a' value for Dagvatten
-        self.assertAlmostEqual(params['a'], 1.9366525983057512)
-
-    def test_calculate_renewal_need(self):
-        """Test the renewal need calculation formula."""
-        # Test case 1: Basic calculation
-        # Using Vatten, PE, age=60, year=1963, dimension=100, no weighting
-        # Params: a=106.938, b=0.062543, c=50
-        # S(t) = 1 / (1 + ((60 - 50) / 106.938)^0.062543) = 1 / (1 + (0.09351)^0.062543) = 1 / (1 + 0.8620) = 0.5370
-        # Need = 1 - S(t) = 0.4630
-        renewal_need = calculation_logic.calculate_renewal_need(
-            pipeline_type='Vatten', material='PE', age=60, year=1963,
-            dimension=100, use_dimension_weighting=False, dimension_factor=0.0
-        )
-        self.assertAlmostEqual(renewal_need, 0.4630, places=4)
-
-        # Test case 2: Age less than or equal to c
-        # age (50) <= c (50), so need should be 0.0
-        renewal_need = calculation_logic.calculate_renewal_need(
-            pipeline_type='Vatten', material='PE', age=50, year=1973,
-            dimension=100, use_dimension_weighting=False, dimension_factor=0.0
-        )
-        self.assertEqual(renewal_need, 0.0)
-
-        # Test case 3: With dimension weighting
-        renewal_need_weighted = calculation_logic.calculate_renewal_need(
-            pipeline_type='Vatten', material='PE', age=60, year=1963,
-            dimension=100, use_dimension_weighting=True, dimension_factor=0.001
-        )
-        # weight = 1 + (100 * 0.001) = 1.1
-        # expected = 0.4630 * 1.1 = 0.5093
-        self.assertAlmostEqual(renewal_need_weighted, 0.5093, places=4)
-
-    def test_parse_dimension(self):
-        """Test the dimension parsing logic for various formats."""
-        # Test with standard numeric types
-        self.assertAlmostEqual(calculation_logic._parse_dimension(200), 200.0)
-        self.assertAlmostEqual(calculation_logic._parse_dimension(150.5), 150.5)
-
-        # Test with string numbers
-        self.assertAlmostEqual(calculation_logic._parse_dimension("50"), 50.0)
-        self.assertAlmostEqual(calculation_logic._parse_dimension("75.5"), 75.5)
-
-        # Test with user-provided formats
-        self.assertAlmostEqual(calculation_logic._parse_dimension("200_O"), 200.0)
-        self.assertAlmostEqual(calculation_logic._parse_dimension("100_I"), 100.0)
-
-        # Test with leading/trailing whitespace
-        self.assertAlmostEqual(calculation_logic._parse_dimension("  300  "), 300.0)
-        self.assertAlmostEqual(calculation_logic._parse_dimension("  250_I  "), 250.0)
-
-        # Test with invalid formats
-        self.assertAlmostEqual(calculation_logic._parse_dimension("abc"), 0.0)
-        self.assertAlmostEqual(calculation_logic._parse_dimension("_O"), 0.0)
-        self.assertAlmostEqual(calculation_logic._parse_dimension("I_100"), 0.0)
-        self.assertAlmostEqual(calculation_logic._parse_dimension(None), 0.0)
-        self.assertAlmostEqual(calculation_logic._parse_dimension(""), 0.0)
-
-    def test_missing_parameters_file(self):
-        """Test behavior when parameters.json is missing."""
-        # Rename the file to simulate it being missing
-        os.rename(self.original_params_path, self.original_params_path + ".bak")
-        try:
-            reload(calculation_logic)
-            self.assertIsNone(calculation_logic.CONFIG_DATA)
-            self.assertIsNotNone(calculation_logic.get_config_error())
-            self.assertIn("not found", calculation_logic.get_config_error())
-        finally:
-            # Rename it back
-            os.rename(self.original_params_path + ".bak", self.original_params_path)
-
-    def test_corrupt_parameters_file(self):
-        """Test behavior with a corrupt parameters.json file."""
-        # Write invalid JSON to the file
-        with open(self.original_params_path, 'w') as f:
-            f.write('{"key": "value",}') # Corrupt JSON with trailing comma
-
-        reload(calculation_logic)
-        self.assertIsNone(calculation_logic.CONFIG_DATA)
-        self.assertIsNotNone(calculation_logic.get_config_error())
-        self.assertIn("Failed to load or parse", calculation_logic.get_config_error())
+    def test_sigma_from_t50_t10(self):
+        # Dagvatten utbyggnad: t50=125, t10=200 → sigma ≈ 58.5
+        sigma = derive_sigma_from_t50_t10(125.0, 200.0)
+        self.assertAlmostEqual(sigma, 58.5, places=1)
 
 
 if __name__ == '__main__':

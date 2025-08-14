@@ -51,47 +51,51 @@ class TestParameterEditorDialog(unittest.TestCase):
         self.dialog.param_file = 'dummy_path.json'
         self.dialog.data = {}
 
-    def test_load_and_populate(self):
-        """Test that data is loaded from JSON and populates the UI."""
-        sample_data = {
-            "parameter_sets": [
-                {"name": "Water", "materials": [{"key": "Iron"}]},
-                {"name": "Sewer", "materials": [{"key": "Clay"}]}
-            ]
+    def test_populate_table(self):
+        """Test that the table is populated from the new nested data structure."""
+        # Sample data with the new nested structure
+        self.dialog.data = {
+            "water": {
+                "Iron": {"mu": 100, "sigma": 20},
+                "Steel": {"mu": 80, "sigma": 15}
+            },
+            "sewer": { "spill": { "Concrete": {"mu": 90, "sigma": 25}}}
         }
-        # Mock the open function to return our sample data
-        m = unittest.mock.mock_open(read_data=json.dumps(sample_data))
-        with unittest.mock.patch('builtins.open', m):
-            self.dialog._load_data()
-            self.dialog._populate_combo()
-            self.dialog.mPipeTypeCombo.count.return_value = 2
 
-            # Check that the combo box was populated
-            self.assertEqual(self.dialog.mPipeTypeCombo.count(), 2)
-            self.dialog.mPipeTypeCombo.addItem.assert_any_call("Water")
-            self.dialog.mPipeTypeCombo.addItem.assert_any_call("Sewer")
+        # Simulate user selecting "water"
+        self.dialog.mPipeTypeCombo.currentText.return_value = "water"
+        self.dialog._populate_table()
 
-            # Check that the table is populated for the first item
-            self.dialog.mPipeTypeCombo.currentText.return_value = "Water"
-            self.dialog._populate_table()
-            self.dialog.mMaterialsTable.rowCount.return_value = 1
-            self.assertEqual(self.dialog.mMaterialsTable.rowCount(), 1)
-            self.dialog.mMaterialsTable.setItem.assert_called()
+        # Check that the table was populated with 2 rows
+        self.assertEqual(self.dialog.mMaterialsTable.setRowCount.call_args[0][0], 2)
+
+        # Check that setItem was called with the correct values for Iron
+        # We can't easily check the QTableWidgetItem content, so we check the calls
+        self.dialog.mMaterialsTable.setItem.assert_any_call(0, 0, unittest.mock.ANY)
+        self.dialog.mMaterialsTable.setItem.assert_any_call(0, 1, unittest.mock.ANY)
+        self.dialog.mMaterialsTable.setItem.assert_any_call(0, 2, unittest.mock.ANY)
 
     @unittest.mock.patch('reneW.parameter_editor_dialog.json.dump')
     def test_save_data(self, mock_json_dump):
         """Test that data is correctly read from the UI and saved to JSON."""
-        # Setup mock UI state
-        self.dialog.mPipeTypeCombo.currentText.return_value = "Water"
+        # Setup mock UI state for saving to "sewer/spill"
+        self.dialog.mPipeTypeCombo.currentText.return_value = "sewer/spill"
         self.dialog.mMaterialsTable.rowCount.return_value = 1
 
-        # Mock the data for a single row in the table
-        mock_item = MagicMock()
-        mock_item.text.side_effect = ['Iron', 'fe', '1900', '2000', '10', '0.5', '5']
-        self.dialog.mMaterialsTable.item.return_value = mock_item
+        # Mock the data for a single row in the table: key, mu, sigma
+        def item_side_effect(row, col):
+            mock_cell = MagicMock()
+            if col == 0:
+                mock_cell.text.return_value = 'PVC'
+            elif col == 1:
+                mock_cell.text.return_value = '120.5'
+            elif col == 2:
+                mock_cell.text.return_value = '30.1'
+            return mock_cell
+        self.dialog.mMaterialsTable.item.side_effect = item_side_effect
 
-        # Mock the parameter set to be updated
-        self.dialog.data = {"parameter_sets": [{"name": "Water", "materials": []}]}
+        # Mock the initial data structure that will be modified
+        self.dialog.data = {"water": {}, "sewer": {"spill": {}, "storm": {}}}
 
         # Mock the open function
         with unittest.mock.patch('builtins.open', unittest.mock.mock_open()):
@@ -102,12 +106,10 @@ class TestParameterEditorDialog(unittest.TestCase):
 
         # Check the data that was passed to json.dump
         written_data = mock_json_dump.call_args[0][0]
-        saved_material = written_data['parameter_sets'][0]['materials'][0]
+        saved_params = written_data['sewer']['spill']['PVC']
 
-        self.assertEqual(saved_material['key'], 'Iron')
-        self.assertEqual(saved_material['keywords'], ['fe'])
-        self.assertEqual(saved_material['year_min'], 1900)
-        self.assertEqual(saved_material['params']['a'], 10.0)
+        self.assertEqual(saved_params['mu'], 120.5)
+        self.assertEqual(saved_params['sigma'], 30.1)
 
 
 from reneW.reneW_dialog import ReneWDialog
@@ -123,9 +125,6 @@ class TestReneWDialog(unittest.TestCase):
         self.dialog.mCheckBoxEnableDimensionWeighting = MagicMock()
         self.dialog.mSpinBoxDimensionFactor = MagicMock()
         self.dialog.mBtnEditParameters = MagicMock()
-        self.dialog.mCheckHotspot = MagicMock()
-        self.dialog.mSpinBoxHotspotThreshold = MagicMock()
-        self.dialog.mSpinBoxHotspotDistance = MagicMock()
         self.dialog.mButtonBox = MagicMock()
         self.dialog.mStatusLabel = MagicMock()
         self.dialog.mMunicipalityFilterCombo = MagicMock()
@@ -175,9 +174,6 @@ class TestReneWDialog(unittest.TestCase):
         mock_project = MagicMock()
         with unittest.mock.patch.object(self.dialog, 'useDimensionWeighting', return_value=True), \
              unittest.mock.patch.object(self.dialog, 'dimensionFactor', return_value=0.005), \
-             unittest.mock.patch.object(self.dialog, 'isHotspotAnalysisEnabled', return_value=True), \
-             unittest.mock.patch.object(self.dialog, 'getHotspotThreshold', return_value=0.8), \
-             unittest.mock.patch.object(self.dialog, 'getHotspotDistance', return_value=10.0), \
              unittest.mock.patch('qgis.core.QgsProject.instance', return_value=mock_project):
             self.dialog.save_settings()
 
@@ -188,9 +184,6 @@ class TestReneWDialog(unittest.TestCase):
             mock_project.writeEntry.assert_any_call('reneW', 'tab_Water_municipalityField', 'municipality_field')
             mock_project.writeEntryBool.assert_any_call('reneW', 'dimensionWeightingEnabled', True)
             mock_project.writeEntryDouble.assert_any_call('reneW', 'dimensionFactor', 0.005)
-            mock_project.writeEntryBool.assert_any_call('reneW', 'hotspotEnabled', True)
-            mock_project.writeEntryDouble.assert_any_call('reneW', 'hotspotThreshold', 0.8)
-            mock_project.writeEntryDouble.assert_any_call('reneW', 'hotspotDistance', 10.0)
 
         # --- Test Load ---
         # Mock the return values from project settings

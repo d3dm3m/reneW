@@ -4,121 +4,96 @@
 
 ## Features
 
-*   Calculates a **renewal need** score (from 0.0 to 1.0+) for each pipe.
-*   Uses a **Herz survival model** based on pipe type (water/sewage), material, and age.
+*   Calculates a **renewal need** score for each pipe based on a statistical failure model.
+*   Uses a **Normal Distribution CDF model** based on pipe type (water/sewer), material, and age.
 *   Includes an **optional and adjustable weighting factor** for pipe dimension to account for consequence of failure.
-*   User-friendly dialog to select the layer and map the necessary attributes.
+*   Features a **Parameter Editor** to customize the underlying statistical model.
+*   Supports **filtering by municipality**.
+*   User-friendly dialog to select layers and map the necessary attributes.
 *   Adds the calculated score to a new field (`fornyelsebehov`) in your data.
+*   UI available in English and Swedish.
 
 ## Installation
 
-To install the `reneW` plugin in QGIS, follow these steps:
-
-1.  **Download the Plugin:**
-    If you have the plugin as a folder (e.g., named `reneW`), you can proceed to the next step. This folder should contain all the plugin files (`__init__.py`, `reneW.py`, etc.).
-
-2.  **Find your QGIS Plugins Directory:**
-    Open QGIS. Go to the `Settings` menu -> `User Profiles` -> `Open Active Profile Folder`. This will open a file explorer window. Inside this folder, navigate to `python/plugins`.
-
-    The full path is typically something like:
-    *   **Windows:** `C:\\Users\\<YourUsername>\\AppData\\Roaming\\QGIS\\QGIS3\\profiles\\default\\python\\plugins`
-    *   **macOS:** `~/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins`
-    *   **Linux:** `~/.local/share/QGIS/QGIS3/profiles/default/python/plugins`
-
-3.  **Copy Plugin Directory:**
-    Copy the entire `reneW` directory into the `plugins` directory you located in the previous step.
-
-4.  **Activate the Plugin in QGIS:**
-    *   Restart QGIS.
-    *   Go to the `Plugins` menu -> `Manage and Install Plugins...`.
-    *   In the `Installed` tab, you should see "reneW". Make sure the checkbox next to it is ticked to enable it.
+1.  **Download the Plugin:** Obtain the plugin as a folder (e.g., named `reneW`).
+2.  **Find your QGIS Plugins Directory:** In QGIS, go to `Settings -> User Profiles -> Open Active Profile Folder`. Navigate to `python/plugins`.
+3.  **Copy Plugin Directory:** Copy the entire `reneW` directory into the `plugins` directory.
+4.  **Activate the Plugin:** Restart QGIS. Go to `Plugins -> Manage and Install Plugins...`. In the `Installed` tab, find "reneW" and check the box to enable it.
 
 You should now see the `reneW` icon in the QGIS toolbar.
 
 ## Usage
 
-1.  **Open Your Project:**
-    Start QGIS and load the vector layer containing your pipeline data. Make sure this layer has attributes for installation year, material, and dimension.
-
-2.  **Launch the Plugin:**
-    Click on the `reneW` icon in the toolbar or go to the `Plugins` menu -> `reneW` -> `Run reneW`.
-
-3.  **Configure the Calculation:**
-    The `reneW - Riskkalkylering` dialog will appear.
-    *   **Välj ledningslager:** Select your pipeline layer.
-    *   **Välj ledningstyp:** Select 'Vatten' (Water) or 'Avlopp' (Sewage/Stormwater).
-    *   **Fält för material:** Choose the field with the material information.
-    *   **Fält för årtal:** Choose the field with the installation year.
-    *   **Fält för dimension:** Choose the field with the dimension information.
-    *   **Använd dimensionsviktning:** Check this box to apply a consequence weighting based on dimension.
-    *   **Faktor:** If weighting is enabled, adjust this factor to control the influence of the dimension. A higher factor gives dimension a greater impact.
-
-4.  **Run the Calculation:**
-    Click the `OK` button.
-
-5.  **View the Results:**
-    *   A new field named `fornyelsebehov` will be added to your layer's attribute table.
-    *   You can now use this field to style your layer (e.g., using a graduated symbology) to visually identify high-risk pipes.
+1.  **Launch the Plugin:** Click on the `reneW` icon.
+2.  **Configure Analysis:** The main dialog has three tabs: `water`, `sewer/spill`, and `sewer/storm`.
+    *   For each pipe type you want to analyze, check the box.
+    *   Select the corresponding **Layer**.
+    *   Map the required fields: **Material**, **Construction year**, and **Dimension**.
+    *   Optionally, map fields for **Municipality**, **Renovation year**, and **Renovation method**.
+3.  **Run:** Click `OK`. A new field `fornyelsebehov` will be added to your layer(s). You can use this field to style the layer to visually identify high-risk pipes.
 
 ## The Calculation Model
 
-### 1. Base Renewal Need (Herz Model)
+### 1. Base Renewal Need (Normal Distribution Model)
 
-The base renewal need is calculated from a survival function, `S(t)`, based on the Herz model. The renewal need is `1 - S(t)`. The survival probability `S(t)` is calculated as:
+The renewal need is based on the probability of failure for a pipe of a certain age. This is calculated using the **Cumulative Distribution Function (CDF) of the Normal Distribution**, denoted as `Φ`.
 
-`S(t) = 1 / (1 + ((t - c) / a)^b)`
+The probability of a pipe having failed by age `t` is given by:
+`F(t) = Φ((t - μ) / σ)`
 
 Where:
 *   `t` is the age of the pipe.
-*   `a`, `b`, and `c` are parameters that depend on the pipe's material and installation year, based on the tables provided by the user.
+*   `μ` (mu) is the **mean lifetime** of the material. This is the age at which 50% of pipes of that material are expected to have failed.
+*   `σ` (sigma) is the **standard deviation**. This parameter controls how spread out the failures are around the mean. A smaller sigma means failures are more tightly clustered around the mean age.
+
+The plugin calculates the renewal need for the next year, which is the increase in failure probability from the current year to the next.
 
 ### 2. Optional Dimension Weighting
 
-If enabled, the base renewal need is multiplied by a consequence factor based on the pipe's dimension. The formula is:
-
+If enabled, the base renewal need is multiplied by a consequence factor:
 `Final Score = Renewal Need * (1 + (Dimension * Factor))`
-
-This allows you to give a higher weight to larger pipes, where a failure would have a greater consequence.
 
 ## Advanced Configuration: Customizing Parameters
 
-The core of the `reneW` plugin's calculation logic is controlled by a configuration file named `parameters.json`, located in the plugin's installation directory (`reneW/parameters.json`). This file allows you to adapt the plugin to your specific data, materials, and survival models without needing to edit the Python code.
+The plugin's calculations are controlled by `parameters.json`, located in the plugin's directory. You can edit this file directly or use the built-in **Parameter Editor** (click "Edit Parameters..." in the main dialog).
 
-If this file is missing or contains errors, the plugin will show an error message when you try to run it.
+### `parameters.json` Structure
 
-### File Structure
+The file contains a nested dictionary structure for the different pipe domains.
 
-The JSON file has a main `parameter_sets` array, which contains objects for each pipeline type supported by the UI: `Vatten`, `Spillvatten`, and `Dagvatten`.
-
-Each pipeline type object has two main parts:
-1.  `materials`: An array of material definitions.
-2.  `default_material`: The parameter set to use if no specific material is matched.
-
-### Material Definition
-
-Each object in the `materials` array defines a specific material and its survival model parameters.
-
-*   `"key"`: A descriptive name for the material (e.g., "Segjärn <1980").
-*   `"keywords"`: An array of lowercase strings. The plugin will search for these keywords in your data's material field to find a match. For example, if your material is "Segjärnsrör", the keyword "segjärn" will match it.
-*   `"year_min"` (optional): The minimum installation year for this rule to apply.
-*   `"year_max"` (optional): The maximum installation year for this rule to apply.
-*   `"params"`: An object containing the `a`, `b`, and `c` parameters for the Herz model.
-
-**Example Material Definition:**
 ```json
 {
-  "key": "PVC <1970",
-  "keywords": ["pvc"],
-  "year_max": 1969,
-  "params": {"a": 6.0, "b": 0.104, "c": 30}
+  "metadata": { ... },
+  "municipalities": [ ... ],
+  "water": {
+    "grajarn_<1950": { "mu": 85, "sigma": 25 },
+    "segjarn_>=1980": { "mu": 135, "sigma": 28 },
+    "ovrigt": { "mu": 100, "sigma": 40 }
+  },
+  "sewer": {
+    "spill": {
+      "betong_<1950": { "mu": 80, "sigma": 20 },
+      "ovrigt": { "mu": 90, "sigma": 35 }
+    },
+    "storm": {
+      "betong_<1950": { "mu": 100, "sigma": 30 },
+      "ovrigt": { "mu": 100, "sigma": 40 }
+    }
+  }
 }
 ```
-This rule applies to any pipe where the material field contains "pvc" and the installation year is 1969 or earlier.
 
-### How to Customize
+*   The main keys are `water` and `sewer`. `sewer` is further divided into `spill` and `storm`.
+*   Inside each section is a dictionary of material parameter sets.
+*   The **keys** of this dictionary (e.g., `"grajarn_<1950"`) are internal identifiers used by the plugin.
+*   The **values** are objects containing the `"mu"` and `"sigma"` for that material class.
 
-*   **To adjust parameters:** Simply change the `a`, `b`, or `c` values for any material.
-*   **To add a new material:** Copy an existing material object, paste it into the `materials` array for the correct pipeline type, and edit the `key`, `keywords`, and `params` to match your new material.
-*   **To add a new material name:** If you use a different name for an existing material (e.g., "Ductile Iron" instead of "Segjärn"), you can just add your term to the `keywords` array for that material.
+### How Material Matching Works
 
-After saving your changes to `parameters.json`, the plugin will automatically use the new configuration the next time you run it in QGIS.
+You do not need to have material names in your data that exactly match the keys in `parameters.json`. The plugin uses a flexible matching system (`reneW/material_lookup.py`) to map your data to the correct parameters.
+
+1.  **Alias Matching:** The system first normalizes your material string (e.g., "Segjärnsrör") and compares it against a vocabulary of common synonyms. For example, "segjärn", "ductile iron", and "dci" all map to the internal base key `segjarn`.
+2.  **Year-based Selection:** For materials that have different properties depending on age (e.g., PVC before and after 1970), the system uses the pipe's construction year to select the correct parameter key (e.g., `pvc_<1970` or `pvc_>=1970`).
+3.  **Fallback:** If no specific material is matched, the system uses the parameters defined for the `ovrigt` (other/unknown) key for that pipe domain.
+
+To customize the logic, you can either edit the `mu` and `sigma` values in the **Parameter Editor** or directly in the `parameters.json` file.

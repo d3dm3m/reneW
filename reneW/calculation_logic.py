@@ -1,170 +1,101 @@
-# -*- coding: utf-8 -*-
-"""
-This module contains the calculation logic for the reneW QGIS plugin,
-based on the Herz survival function model.
-"""
-import os
-import json
-import re
+# calculation_logic.py
+# Normal-distribution cohort renewal model for VA-ledningar
+#
+# renewal_km = L * [Phi((age1−μ)/σ) − Phi((age0−μ)/σ)]
+# Guardrails: clamp CDF to [0,1], treat negative ages as F=0 at that bound.
 
+from __future__ import annotations
+from dataclasses import dataclass
+from typing import Iterable, List, Tuple, Dict
+import math
 
-def _parse_dimension(dim_value) -> float:
-    """
-    Parses a dimension value, which can be a number or a string
-    like '200_O', and returns a float.
-    Returns 0.0 if parsing fails.
-    """
-    if isinstance(dim_value, (int, float)):
-        return float(dim_value)
+# Optional: use SciPy if available
+try:
+    from scipy.stats import norm as _scipy_norm  # type: ignore
+except Exception:  # pragma: no cover
+    _scipy_norm = None
 
-    if not isinstance(dim_value, str):
+SQRT2 = math.sqrt(2.0)
+Z_0P9 = 1.2815515655446004  # Phi^{-1}(0.9) – used only by derive_sigma_from_t50_t10
+
+def normal_cdf(x: float, mu: float, sigma: float) -> float:
+    """Return Phi((x - mu)/sigma). Uses SciPy if available; otherwise math.erf."""
+    if sigma <= 0:
+        sigma = 1e-9
+    z = (x - mu) / sigma
+    if _scipy_norm is not None:
+        return float(_scipy_norm.cdf(z))
+    return 0.5 * (1.0 + math.erf(z / SQRT2))
+
+def clamp01(v: float) -> float:
+    return 0.0 if v < 0.0 else (1.0 if v > 1.0 else v)
+
+@dataclass(frozen=True)
+class MaterialParams:
+    mu: float
+    sigma: float
+
+@dataclass(frozen=True)
+class Cohort:
+    length_km: float
+    install_year: int
+    material_key: str  # not required for math; useful for debugging
+
+def renewal_for_cohort_period(
+    cohort: Cohort,
+    t0: int,
+    t1: int,
+    params: MaterialParams,
+) -> float:
+    """Compute renewal (km) for a cohort in [t0, t1)."""
+    if t1 <= t0:
         return 0.0
 
-    # Try direct conversion first for cases like "50"
-    try:
-        return float(dim_value)
-    except (ValueError, TypeError):
-        pass  # Proceed to regex matching
+    age0 = t0 - cohort.install_year
+    age1 = t1 - cohort.install_year
 
-    # Use regex to find the leading number in strings like "200_O"
-    match = re.match(r'^\s*(\d+(\.\d+)?)\s*', str(dim_value))
-    if match:
-        try:
-            return float(match.group(1))
-        except (ValueError, TypeError):
-            return 0.0
-    return 0.0
+    F0 = 0.0 if age0 <= 0 else clamp01(normal_cdf(age0, params.mu, params.sigma))
+    F1 = 0.0 if age1 <= 0 else clamp01(normal_cdf(age1, params.mu, params.sigma))
 
-
-# Global variable to hold the loaded parameters
-CONFIG_DATA = None
-CONFIG_ERROR = None
-
-
-def load_parameters():
-    """
-    Loads calculation parameters from the parameters.json file.
-    This function is executed when the module is first imported.
-    """
-    global CONFIG_DATA, CONFIG_ERROR
-
-    # Reset state
-    CONFIG_DATA = None
-    CONFIG_ERROR = None
-
-    try:
-        # Construct the path to the parameters.json file relative to this script
-        plugin_dir = os.path.dirname(__file__)
-        config_path = os.path.join(plugin_dir, 'parameters.json')
-
-        if not os.path.exists(config_path):
-            raise FileNotFoundError("parameters.json not found.")
-
-        with open(config_path, 'r', encoding='utf-8') as f:
-            CONFIG_DATA = json.load(f)
-
-    except (FileNotFoundError, json.JSONDecodeError, Exception) as e:
-        CONFIG_ERROR = f"Failed to load or parse 'parameters.json': {e}"
-        CONFIG_DATA = None
-
-
-def get_config_error():
-    """Returns the configuration error message, if any."""
-    return CONFIG_ERROR
-
-
-def find_material_params(material: str, year: int, pipeline_type: str) -> dict:
-    """
-    Finds the Herz parameters for a given material, installation year,
-    and pipeline type by searching through the loaded configuration data.
-    """
-    if not CONFIG_DATA or not isinstance(material, str):
-        return None
-
-    mat_lower = material.lower().strip()
-
-    # Find the correct parameter set for the pipeline type
-    param_set = next((s for s in CONFIG_DATA.get('parameter_sets', [])
-                      if s['name'] == pipeline_type), None)
-
-    if not param_set:
-        return None
-
-    # Search through the materials in the set
-    for mat_config in param_set.get('materials', []):
-        # Check for keyword match
-        if not any(keyword in mat_lower for keyword in
-                   mat_config.get('keywords', [])):
-            continue
-
-        # Check for year constraints
-        year_min = mat_config.get('year_min')
-        year_max = mat_config.get('year_max')
-
-        if year_min and year >= year_min and (not year_max or year <= year_max):
-            return mat_config.get('params')
-        elif year_max and year <= year_max and not year_min:
-            return mat_config.get('params')
-        elif not year_min and not year_max:
-            return mat_config.get('params')
-
-    # If no specific material matched, return the default for the set
-    return param_set.get('default_material', {}).get('params')
-
-
-def calculate_renewal_need(
-        pipeline_type: str,
-        material: str,
-        age: int,
-        year: int,
-        dimension: any,
-        use_dimension_weighting: bool,
-        dimension_factor: float) -> float:
-    """
-    Calculates the renewal need for a pipe based on its type, material,
-    age, using the Herz survival model, and optionally applies a
-    dimension-based weighting.
-    """
-    parsed_dimension = _parse_dimension(dimension)
-    params = find_material_params(material, year, pipeline_type)
-
-    if not params:
+    dF = F1 - F0
+    if dF <= 0:
         return 0.0
+    return min(cohort.length_km, cohort.length_km * dF)
 
-    a = params.get('a')
-    b = params.get('b')
-    c = params.get('c')
+def renewal_totals(
+    cohorts: Iterable[Cohort],
+    periods: Iterable[Tuple[int, int]],
+    materials: Dict[str, MaterialParams],
+) -> List[float]:
+    """Return total renewals (km) per period across all cohorts."""
+    totals: List[float] = []
+    for (t0, t1) in periods:
+        s = 0.0
+        for c in cohorts:
+            mp = materials[c.material_key]
+            s += renewal_for_cohort_period(c, t0, t1, mp)
+        totals.append(s)
+    return totals
 
-    if None in [a, b, c] or age <= c:
-        return 0.0
+def cumulative_by_period(values: Iterable[float]) -> List[float]:
+    out: List[float] = []
+    acc = 0.0
+    for v in values:
+        acc += v
+        out.append(acc)
+    return out
 
-    try:
-        # Ensure 'a' is not zero to prevent division by zero
-        if a == 0:
-            return 0.0
+def derive_sigma_from_t50_t10(t50: float, t10: float) -> float:
+    """For a normal model: mu ≈ t50; sigma ≈ (t10 - t50) / z_{0.9}."""
+    return (t10 - t50) / Z_0P9
 
-        base = (age - c) / a
+def decades_from(start: int, n_periods: int) -> List[Tuple[int, int]]:
+    return [(start + 10*i, start + 10*(i+1)) for i in range(n_periods)]
 
-        # The base of the power should not be negative
-        if base < 0:
-            return 0.0
-
-        survival_probability = 1.0 / (1.0 + base**b)
-    except (ValueError, ZeroDivisionError, OverflowError):
-        return 0.0
-
-    renewal_need = 1.0 - survival_probability
-
-    if use_dimension_weighting and parsed_dimension > 0 and dimension_factor > 0:
-        # Apply weighting factor, ensuring it doesn't lead to an excessive score
-        # The formula is Renewal Need * (1 + (Dimension * Factor))
-        # The factor is typically small (e.g., 0.001)
-        weight = 1.0 + (parsed_dimension * dimension_factor)
-        final_need = renewal_need * weight
-        return final_need
-
-    return renewal_need
-
-
-# --- Initial load of parameters when the module is imported ---
-load_parameters()
+if __name__ == "__main__":
+    # Quick smoke test
+    pe = MaterialParams(mu=125.6, sigma=27.7)
+    cohorts = [Cohort(length_km=10.0, install_year=2000, material_key="pe")]
+    periods = decades_from(2020, 3)
+    totals = renewal_totals(cohorts, periods, {"pe": pe})
+    print("Per-decade renewals:", totals)

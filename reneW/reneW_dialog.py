@@ -27,14 +27,6 @@ class ReneWDialog(QDialog, FORM_CLASS):
             self.mSpinBoxDimensionFactor.setEnabled)
         self.mBtnEditParameters.clicked.connect(self._open_parameter_editor)
 
-        # --- Hotspot Analysis Settings ---
-        self.mCheckHotspot.toggled.connect(
-            self.mSpinBoxHotspotThreshold.setEnabled)
-        self.mCheckHotspot.toggled.connect(
-            self.mSpinBoxHotspotDistance.setEnabled)
-        self.mSpinBoxHotspotThreshold.setEnabled(False)
-        self.mSpinBoxHotspotDistance.setEnabled(False)
-
         # --- Set initial validation state ---
         self._validate_inputs()
 
@@ -55,22 +47,16 @@ class ReneWDialog(QDialog, FORM_CLASS):
 
     def _create_dynamic_tabs(self):
         """Creates UI tabs dynamically based on the parameters.json file."""
+        # Clear existing tabs and internal list
         while self.mTabWidget.count() > 0:
             self.mTabWidget.removeTab(0)
+        self.tabs = []
 
-        param_file = os.path.join(os.path.dirname(__file__), 'parameters.json')
-        try:
-            with open(param_file, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-            parameter_sets = config.get('parameter_sets', [])
-        except (IOError, json.JSONDecodeError):
-            parameter_sets = []
+        # Define the tabs to be created. These correspond to the top-level keys
+        # in the parameters.json that define a set of materials.
+        tab_names = ["water", "sewer/spill", "sewer/storm"]
 
-        for param_set in parameter_sets:
-            set_name = param_set.get('name')
-            if not set_name:
-                continue
-
+        for set_name in tab_names:
             tab_widget = QWidget()
             tab_layout = QVBoxLayout(tab_widget)
             check = QCheckBox(self.tr("Analyze {0} pipes").format(set_name))
@@ -191,15 +177,6 @@ class ReneWDialog(QDialog, FORM_CLASS):
             self.mStatusLabel.setText(self.tr("Status: Ready to run analysis."))
             self.mStatusLabel.setStyleSheet("color: green;")
 
-    def isHotspotAnalysisEnabled(self) -> bool:
-        return self.mCheckHotspot.isChecked()
-
-    def getHotspotThreshold(self) -> float:
-        return self.mSpinBoxHotspotThreshold.value()
-
-    def getHotspotDistance(self) -> float:
-        return self.mSpinBoxHotspotDistance.value()
-
     def save_settings(self):
         """Saves the dialog's settings to the current QGIS project."""
         project = QgsProject.instance()
@@ -219,9 +196,6 @@ class ReneWDialog(QDialog, FORM_CLASS):
 
         project.writeEntryBool('reneW', 'dimensionWeightingEnabled', self.useDimensionWeighting())
         project.writeEntryDouble('reneW', 'dimensionFactor', self.dimensionFactor())
-        project.writeEntryBool('reneW', 'hotspotEnabled', self.isHotspotAnalysisEnabled())
-        project.writeEntryDouble('reneW', 'hotspotThreshold', self.getHotspotThreshold())
-        project.writeEntryDouble('reneW', 'hotspotDistance', self.getHotspotDistance())
 
     def load_settings(self):
         """Loads the dialog's settings from the current QGIS project."""
@@ -252,6 +226,3 @@ class ReneWDialog(QDialog, FORM_CLASS):
 
         self.mCheckBoxEnableDimensionWeighting.setChecked(project.readBoolEntry('reneW', 'dimensionWeightingEnabled', False)[0])
         self.mSpinBoxDimensionFactor.setValue(project.readDoubleEntry('reneW', 'dimensionFactor', 0.001)[0])
-        self.mCheckHotspot.setChecked(project.readBoolEntry('reneW', 'hotspotEnabled', False)[0])
-        self.mSpinBoxHotspotThreshold.setValue(project.readDoubleEntry('reneW', 'hotspotThreshold', 0.5)[0])
-        self.mSpinBoxHotspotDistance.setValue(project.readDoubleEntry('reneW', 'hotspotDistance', 5.0)[0])

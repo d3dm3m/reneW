@@ -1,134 +1,50 @@
 {
-  "municipalities": [],
-  "parameter_sets": [
-    {
-      "name": "Vatten",
-      "materials": [
-        {
-          "key": "Gråjärn <1950",
-          "keywords": ["gråjärn", "gjj"],
-          "year_max": 1949,
-          "params": {"a": 55.490601649355284, "b": 0.062332638228731335, "c": 30}
-        },
-        {
-          "key": "Gråjärn >=1950",
-          "keywords": ["gråjärn", "gjj"],
-          "year_min": 1950,
-          "params": {"a": 55.490601649355284, "b": 0.062332638228731335, "c": 40}
-        },
-        {
-          "key": "Segjärn <1980",
-          "keywords": ["segjärn", "sjj", "segj", "seg"],
-          "year_max": 1979,
-          "params": {"a": 55.490601649355284, "b": 0.062332638228731335, "c": 5}
-        },
-        {
-          "key": "Segjärn >=1980",
-          "keywords": ["segjärn", "sjj", "segj", "seg"],
-          "year_min": 1980,
-          "params": {"a": 106.9383234418553, "b": 0.062543758427977422, "c": 50}
-        },
-        {
-          "key": "PVC <1970",
-          "keywords": ["pvc"],
-          "year_max": 1969,
-          "params": {"a": 5.9999999999999982, "b": 0.1039720770839918, "c": 30}
-        },
-        {
-          "key": "PVC >=1970",
-          "keywords": ["pvc"],
-          "year_min": 1970,
-          "params": {"a": 55.490601649355284, "b": 0.062332638228731335, "c": 40}
-        },
-        {
-          "key": "PE",
-          "keywords": ["pe", "pp", "pem", "pel", "peh", "polyeten"],
-          "params": {"a": 106.9383234418553, "b": 0.062543758427977422, "c": 50}
-        },
-        {
-          "key": "Stål",
-          "keywords": ["stål", "sta", "galv"],
-          "params": {"a": 55.490601649355284, "b": 0.062332638228731335, "c": 30}
-        },
-        {
-          "key": "Asbestcement",
-          "keywords": ["asbest", "ac", "eternit"],
-          "params": {"a": 55.490601649355284, "b": 0.062332638228731335, "c": 30}
-        }
-      ],
-      "default_material": {
-        "key": "Övrigt/okänt Vatten",
-        "params": {"a": 55.490601649355284, "b": 0.062332638228731335, "c": 30}
+  "metadata": {
+    "model": "normal",
+    "units": { "mu": "years", "sigma": "years" },
+    "sources": [
+      {
+        "workbook": "P116_6_Strategiskt_Förnyelsebehov_Vatten_ver_2024.1 1.xlsx",
+        "sheets": ["Om Ledningsdata → Statistik – modell"]
+      },
+      {
+        "workbook": "P116_6_strategiskt_förnyelsebehov_Avlopp_ver_2024.1 1.xlsx",
+        "sheets": ["Om Ledningsdata → Tabell 3-7", "Om Ledningsdata → Tabell 3-8 (dagvatten)"]
       }
+    ],
+    "notes": {
+      "storm_sigma_derivation": "For storm (dagvatten), mu ≈ t50 and sigma ≈ (t10 − t50)/1.28155 based on normal quantiles (z_0.9).",
+      "clamp": "Clamp CDF outputs to [0,1] and ignore negative ages during period bounds."
     },
-    {
-      "name": "Spillvatten",
-      "materials": [
-        {
-          "key": "Betong <1950",
-          "keywords": ["betong", "btg"],
-          "year_max": 1949,
-          "params": {"a": 12.394630847256085, "b": 0.053337105584475054, "c": 30}
-        },
-        {
-          "key": "Betong 1950-1969",
-          "keywords": ["betong", "btg"],
-          "year_min": 1950,
-          "year_max": 1969,
-          "params": {"a": 2.2095582333960015, "b": 0.0261337765364261, "c": 30}
-        },
-        {
-          "key": "Betong >=1970",
-          "keywords": ["betong", "btg"],
-          "year_min": 1970,
-          "params": {"a": 61.29814935110069, "b": 0.043661643079612622, "c": 30}
-        },
-        {
-          "key": "Plast",
-          "keywords": ["pvc", "pe", "pp", "pem", "pel", "peh", "polyeten", "ultra", "pragma", "flexoren"],
-          "params": {"a": 61.29814935110069, "b": 0.043661643079612622, "c": 30}
-        },
-        {
-          "key": "Lergods",
-          "keywords": ["lergods", "lg", "höganäs", "tegel"],
-          "params": {"a": 19.156047145198428, "b": 0.035905009195958362, "c": 30}
-        }
-      ],
-      "default_material": {
-        "key": "Övrigt/okänt Spillvatten",
-        "params": {"a": 19.156047145198428, "b": 0.035905009195958362, "c": 30}
-      }
+    "generated_utc": "2025-08-14T06:06:28Z",
+    "version": "2024.1"
+  },
+  "water": {
+    "grajarn_<1950": { "mu": 95.9, "sigma": 27.2 },
+    "grajarn_>=1950": { "mu": 105.9, "sigma": 27.2 },
+    "segjarn_<1980": { "mu": 54.3, "sigma": 19.3 },
+    "segjarn_>=1980": { "mu": 125.6, "sigma": 27.7 },
+    "pe": { "mu": 125.6, "sigma": 27.7 },
+    "pvc_<1970": { "mu": 52.1, "sigma": 14.4 },
+    "pvc_>=1970": { "mu": 105.9, "sigma": 27.2 },
+    "ovrigt": { "mu": 95.9, "sigma": 27.2 },
+    "new_or_renewed": { "mu": 125.6, "sigma": 27.7 }
+  },
+  "sewer": {
+    "spill": {
+      "betong_<1950": { "mu": 82.6, "sigma": 28.9 },
+      "betong_1950_1969": { "mu": 94.8, "sigma": 47.2 },
+      "betong_>=1970": { "mu": 126.2, "sigma": 38.7 },
+      "plast": { "mu": 126.2, "sigma": 38.7 },
+      "ovrigt": { "mu": 118.0, "sigma": 43.8 },
+      "new_or_renewed": { "mu": 126.2, "sigma": 38.7 }
     },
-    {
-      "name": "Dagvatten",
-      "materials": [
-        {
-          "key": "Betong <1950",
-          "keywords": ["betong", "btg"],
-          "year_max": 1949,
-          "params": {"a": 4.8243258238197129, "b": 0.0274356222257029, "c": 30}
-        },
-        {
-          "key": "Betong >=1950",
-          "keywords": ["betong", "btg"],
-          "year_min": 1950,
-          "params": {"a": 5.101654542374197, "b": 0.02063502937932888, "c": 30}
-        },
-        {
-          "key": "Plast",
-          "keywords": ["pvc", "pe", "pp", "pem", "pel", "peh", "polyeten", "ultra", "pragma", "flexoren"],
-          "params": {"a": 61.29814935110069, "b": 0.043661643079612622, "c": 30}
-        },
-        {
-          "key": "Lergods",
-          "keywords": ["lergods", "lg", "höganäs", "tegel"],
-          "params": {"a": 1.9366525983057512, "b": 0.022838846131023077, "c": 30}
-        }
-      ],
-      "default_material": {
-        "key": "Övrigt/okänt Dagvatten",
-        "params": {"a": 1.9366525983057512, "b": 0.022838846131023077, "c": 30}
-      }
+    "storm": {
+      "betong_<1950": { "mu": 100.0, "sigma": 58.5 },
+      "betong_1950_1969": { "mu": 125.0, "sigma": 78.1 },
+      "plast": { "mu": 125.0, "sigma": 39.0 },
+      "ovrigt": { "mu": 90.0, "sigma": 66.3 },
+      "new_or_renewed": { "mu": 125.0, "sigma": 58.5 }
     }
-  ]
+  }
 }
