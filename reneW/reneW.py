@@ -210,9 +210,10 @@ class ReneW:
                     # Renovation logic
                     if config.get('reno_year_field'):
                         reno_year_idx = fields.indexFromName(config['reno_year_field'])
-                        if reno_year_idx != -1 and attrs[reno_year_idx]:
+                        reno_year_val = attrs[reno_year_idx]
+                        if reno_year_idx != -1 and reno_year_val and str(reno_year_val).strip() not in ['1900', 'null', 'NULL']:
                             try:
-                                reno_year = int(attrs[reno_year_idx])
+                                reno_year = int(reno_year_val)
                                 age = max(0, current_year - reno_year)
                             except (ValueError, TypeError):
                                 pass
