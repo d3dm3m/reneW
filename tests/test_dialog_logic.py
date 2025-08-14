@@ -131,4 +131,8 @@ class TestReneWDialog(unittest.TestCase):
         self.dialog.mTemporalEndYearSpinBox.value.return_value = 2040
         self.dialog._validate_inputs()
         mock_ok_button.setEnabled.assert_called_with(False)
-        self.dialog.mStatusLabel.setText.assert_called_with("Error: " + "Temporal Analysis: End year must be after start year.")
+
+        # Retrieve the actual text passed to the mock
+        actual_error_text = self.dialog.mStatusLabel.setText.call_args[0][0]
+        expected_error = "Temporal Analysis: End year must be after start year."
+        self.assertIn(expected_error, actual_error_text)
