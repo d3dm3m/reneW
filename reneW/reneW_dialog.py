@@ -2,7 +2,8 @@ import os
 import json
 from qgis.PyQt import uic
 from qgis.PyQt.QtWidgets import (QDialog, QDialogButtonBox, QWidget, QVBoxLayout,
-                                 QCheckBox, QGroupBox, QGridLayout, QLabel)
+                                 QCheckBox, QGroupBox, QGridLayout, QLabel,
+                                 QFormLayout, QDoubleSpinBox, QSpinBox)
 from qgis.core import QgsMapLayerProxyModel, QgsProject, QgsVectorLayer
 from qgis.gui import QgsFieldComboBox, QgsMapLayerComboBox
 from .parameter_editor_dialog import ParameterEditorDialog
@@ -17,6 +18,38 @@ class ReneWDialog(QDialog, FORM_CLASS):
         """Constructor."""
         super(ReneWDialog, self).__init__(parent)
         self.setupUi(self)
+
+        # --- Programmatically add Hotspot Analysis controls ---
+        hotspot_groupbox = QGroupBox(self.tr("Hotspot Analysis"))
+        hotspot_layout = QFormLayout(hotspot_groupbox)
+
+        self.mCheckBoxEnableHotspot = QCheckBox(self.tr("Enable Hotspot Analysis"))
+        self.mSpinBoxHotspotThreshold = QDoubleSpinBox()
+        self.mSpinBoxHotspotRadius = QSpinBox()
+
+        self.mSpinBoxHotspotThreshold.setDecimals(2)
+        self.mSpinBoxHotspotThreshold.setSingleStep(0.1)
+        self.mSpinBoxHotspotThreshold.setRange(0.0, 1.0)
+        self.mSpinBoxHotspotThreshold.setValue(0.75)
+
+        self.mSpinBoxHotspotRadius.setRange(1, 1000)
+        self.mSpinBoxHotspotRadius.setValue(50)
+        self.mSpinBoxHotspotRadius.setSuffix(" m")
+
+        hotspot_layout.addRow(self.mCheckBoxEnableHotspot)
+        hotspot_layout.addRow(self.tr("Renewal need threshold:"), self.mSpinBoxHotspotThreshold)
+        hotspot_layout.addRow(self.tr("Search radius:"), self.mSpinBoxHotspotRadius)
+
+        # Add the new groupbox to the existing layout of global settings
+        self.groupBox.layout().insertWidget(2, hotspot_groupbox)
+
+        # --- Connect signals ---
+        self.mCheckBoxEnableHotspot.toggled.connect(self.mSpinBoxHotspotThreshold.setEnabled)
+        self.mCheckBoxEnableHotspot.toggled.connect(self.mSpinBoxHotspotRadius.setEnabled)
+        # Set initial state
+        self.mSpinBoxHotspotThreshold.setEnabled(False)
+        self.mSpinBoxHotspotRadius.setEnabled(False)
+        # --- End of Hotspot Analysis controls ---
 
         self.tabs = []
         self._create_dynamic_tabs()
@@ -117,6 +150,15 @@ class ReneWDialog(QDialog, FORM_CLASS):
     def dimensionFactor(self) -> float:
         return self.mSpinBoxDimensionFactor.value()
 
+    def useHotspotAnalysis(self) -> bool:
+        return self.mCheckBoxEnableHotspot.isChecked()
+
+    def hotspotThreshold(self) -> float:
+        return self.mSpinBoxHotspotThreshold.value()
+
+    def hotspotRadius(self) -> int:
+        return self.mSpinBoxHotspotRadius.value()
+
     def get_selected_municipality_code(self):
         """Returns the user data (code) of the selected item in the municipality filter."""
         return self.mMunicipalityFilterCombo.currentData()
@@ -196,6 +238,9 @@ class ReneWDialog(QDialog, FORM_CLASS):
 
         project.writeEntryBool('reneW', 'dimensionWeightingEnabled', self.useDimensionWeighting())
         project.writeEntryDouble('reneW', 'dimensionFactor', self.dimensionFactor())
+        project.writeEntryBool('reneW', 'hotspotAnalysisEnabled', self.useHotspotAnalysis())
+        project.writeEntryDouble('reneW', 'hotspotThreshold', self.hotspotThreshold())
+        project.writeEntry('reneW', 'hotspotRadius', self.hotspotRadius())
 
     def load_settings(self):
         """Loads the dialog's settings from the current QGIS project."""
@@ -226,3 +271,7 @@ class ReneWDialog(QDialog, FORM_CLASS):
 
         self.mCheckBoxEnableDimensionWeighting.setChecked(project.readBoolEntry('reneW', 'dimensionWeightingEnabled', False)[0])
         self.mSpinBoxDimensionFactor.setValue(project.readDoubleEntry('reneW', 'dimensionFactor', 0.001)[0])
+
+        self.mCheckBoxEnableHotspot.setChecked(project.readBoolEntry('reneW', 'hotspotAnalysisEnabled', False)[0])
+        self.mSpinBoxHotspotThreshold.setValue(project.readDoubleEntry('reneW', 'hotspotThreshold', 0.75)[0])
+        self.mSpinBoxHotspotRadius.setValue(int(project.readEntry('reneW', 'hotspotRadius', '50')[0]))

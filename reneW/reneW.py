@@ -7,7 +7,9 @@ from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtCore import QVariant, QCoreApplication, Qt
 from qgis.core import (
     QgsProject, QgsVectorLayer, QgsField, QgsGeometry, QgsFeature,
-    QgsFillSymbol, QgsSimpleFillSymbolLayer, QgsMessageLog, Qgis, QgsBlurEffect)
+    QgsFillSymbol, QgsSimpleFillSymbolLayer, QgsMessageLog, Qgis, QgsBlurEffect,
+    QgsFields, QgsFeatureSink, QgsFeatureRequest, QgsProcessing)
+from qgis.processing import QgsProcessingAlgorithm, QgsProcessingFeedback
 
 # Import the code for the dialog and the calculation logic
 from .reneW_dialog import ReneWDialog
@@ -286,9 +288,22 @@ class ReneW:
                 self.iface.messageBar().pushMessage(tr("Info"), tr("Analysis complete for {0} layers.").format(processed_layers), level=0, duration=5)
                 self.iface.mapCanvas().refresh()
 
+            hotspot_layer = None
+            if self.dlg.useHotspotAnalysis():
+                hotspot_threshold = self.dlg.hotspotThreshold()
+                hotspot_radius = self.dlg.hotspotRadius()
+                hotspot_layer = self._run_hotspot_analysis(
+                    analysis_configs, hotspot_threshold, hotspot_radius
+                )
+                if hotspot_layer:
+                    QgsProject.instance().addMapLayer(hotspot_layer)
+                    self.iface.messageBar().pushMessage(
+                        tr("Success"), tr("Hotspot analysis complete."), level=0, duration=4)
+
             if high_risk_results:
                 high_risk_results.sort(key=lambda x: x['renewal_need'], reverse=True)
-                self.results_dialog = ResultsDialog(parent=self.iface.mainWindow(), hotspot_count=0) # Hotspot removed for now
+                hotspot_count = hotspot_layer.featureCount() if hotspot_layer else 0
+                self.results_dialog = ResultsDialog(parent=self.iface.mainWindow(), hotspot_count=hotspot_count)
                 self.results_dialog.zoom_to_feature_signal.connect(self._handle_zoom_to_feature)
                 self.results_dialog.populate_table(high_risk_results)
                 self.results_dialog.show()
@@ -296,10 +311,79 @@ class ReneW:
             QgsMessageLog.logMessage(tr("reneW analysis finished."), 'reneW', Qgis.Success)
 
     def _run_hotspot_analysis(self, analysis_configs, threshold, distance):
-        # This function needs to be updated to work with the new logic if needed.
-        # For now, it is effectively disabled as the main `run` method no longer calls it.
-        return None
+        """
+        Runs a hotspot analysis on the layers that have been processed.
+        """
+        feedback = QgsProcessingFeedback()
+        high_risk_layers = []
+        project_crs = QgsProject.instance().crs()
 
-    def _create_hotspot_layer(self, hotspot_geom, crs):
-        # This function is also effectively disabled.
-        return None
+        # Step 1: Create temporary layers of high-risk features for each input layer
+        for config in analysis_configs:
+            layer = config['layer']
+            expr = f"\"fornyelsebehov\" >= {threshold}"
+
+            # Create a memory layer with only the features matching the expression
+            temp_layer = layer.clone()
+            temp_layer.setName(f"high_risk_{layer.name()}")
+
+            # Request features with the filter
+            request = QgsFeatureRequest().setFilterExpression(expr)
+
+            # Use a data provider to add features to the temp layer
+            temp_provider = temp_layer.dataProvider()
+            temp_layer.startEditing()
+            temp_provider.addFeatures(layer.getFeatures(request))
+            temp_layer.commitChanges()
+
+            if temp_layer.featureCount() > 0:
+                high_risk_layers.append(temp_layer)
+
+        if not high_risk_layers:
+            self.iface.messageBar().pushMessage(tr("Info"), tr("No features found above the risk threshold for hotspot analysis."), level=0)
+            return None
+
+        # Step 2: Merge high-risk feature layers into one
+        merged_layer_path = 'memory:merged_high_risk'
+        merge_params = {'LAYERS': high_risk_layers, 'CRS': project_crs, 'OUTPUT': merged_layer_path}
+        merged_result = QgsProcessing.run("native:mergevectorlayers", merge_params, feedback=feedback)
+        merged_layer = merged_result['OUTPUT']
+
+        # Step 3: Buffer the merged layer
+        buffered_layer_path = 'memory:buffered'
+        buffer_params = {'INPUT': merged_layer, 'DISTANCE': distance, 'SEGMENTS': 8, 'DISSOLVE': False, 'OUTPUT': buffered_layer_path}
+        buffered_result = QgsProcessing.run("native:buffer", buffer_params, feedback=feedback)
+        buffered_layer = buffered_result['OUTPUT']
+
+        # Step 4: Dissolve the buffered layer to create hotspots
+        dissolved_layer_path = 'memory:dissolved_hotspots'
+        dissolve_params = {'INPUT': buffered_layer, 'OUTPUT': dissolved_layer_path}
+        dissolved_result = QgsProcessing.run("native:dissolve", dissolve_params, feedback=feedback)
+        dissolved_layer = dissolved_result['OUTPUT']
+
+        # Step 5: Calculate statistics for each hotspot
+        stats_layer_path = 'memory:hotspots_with_stats'
+        stats_params = {
+            'INPUT': dissolved_layer,
+            'JOIN': merged_layer,
+            'PREDICATE': [0],  # Intersects
+            'JOIN_FIELDS': ['fornyelsebehov'],
+            'SUMMARIES': [5, 6],  # Count, Mean
+            'DISCARD_NONMATCHING': True,
+            'OUTPUT': stats_layer_path
+        }
+        stats_result = QgsProcessing.run("native:joinattributesbylocation", stats_params, feedback=feedback)
+        stats_layer = stats_result['OUTPUT']
+
+        # Rename fields for clarity
+        stats_layer.startEditing()
+        stats_layer.renameAttribute(stats_layer.fields().lookupField('fornyelsebehov_count'), 'pipe_count')
+        stats_layer.renameAttribute(stats_layer.fields().lookupField('fornyelsebehov_mean'), 'avg_renewal_need')
+        stats_layer.commitChanges()
+
+        # Final styling
+        symbol = QgsFillSymbol.createSimple({'color': '255,0,0,70', 'outline_color': 'red', 'outline_width': '0.5'})
+        stats_layer.renderer().setSymbol(symbol)
+        stats_layer.setName(tr("Hotspots"))
+
+        return stats_layer
