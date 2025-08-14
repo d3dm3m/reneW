@@ -27,26 +27,48 @@ class TestParameterEditorDialog(unittest.TestCase):
         self.dialog.mBtnRemoveMaterialRow = MagicMock()
         self.dialog.mButtonBox = MagicMock()
         self.dialog.param_file = 'dummy_path.json'
-        sys.modules['qgis.PyQt.QtWidgets'].QTableWidgetItem.side_effect = lambda text='': MagicMock()
         self.dialog.data = {
             "material_defaults": {"pvc": {"mu": 60, "sigma": 5}, "segjarn": {"mu": 90, "sigma": 5}},
             "water": {"segjarn": {"mu": 100, "sigma": 8}}, "sewer": {"spill": {}, "storm": {}}
         }
 
-    def test_populate_table_merged_view(self):
+    @patch('reneW.parameter_editor_dialog.QTableWidgetItem')
+    @patch('reneW.parameter_editor_dialog.QFont')
+    def test_populate_table_merged_view(self, mock_qfont, mock_qtablewidgetitem):
         """Test that the table shows a merged view of defaults and overrides."""
-        qfont_mock = sys.modules['qgis.PyQt.QtGui'].QFont
-        italic_font_instance = qfont_mock.return_value
+        # Configure the mock for QTableWidgetItem to behave like the real thing
+        def mock_qtablewidgetitem_factory(text=''):
+            mock_item = MagicMock()
+            mock_item.text.return_value = str(text)
+            return mock_item
+        mock_qtablewidgetitem.side_effect = mock_qtablewidgetitem_factory
+
+        italic_font_instance = mock_qfont.return_value
         self.dialog.mPipeTypeCombo.currentText.return_value = "water"
+
+        # The test data includes 'pvc' (default) and 'segjarn' (override for water)
         self.dialog._populate_table()
-        qfont_mock.assert_called()
+
+        # Assert that QFont() was called to create the italic font
+        mock_qfont.assert_called()
         italic_font_instance.setItalic.assert_called_with(True)
+
+        # There should be 2 rows: pvc (from default) and segjarn (from water override)
         self.assertEqual(self.dialog.mMaterialsTable.setRowCount.call_args[0][0], 2)
+
+        # Get the item mocks that were passed to setItem
         calls = self.dialog.mMaterialsTable.setItem.call_args_list
-        pvc_key_item = calls[0][0][2]
-        segjarn_key_item = calls[3][0][2]
-        pvc_key_item.setFont.assert_called_with(italic_font_instance)
-        segjarn_key_item.setFont.assert_not_called()
+        # Create a dictionary of {text: item_mock} for the key items (column 0)
+        items = {call.args[2].text(): call.args[2] for call in calls if call.args[1] == 0}
+
+
+        # 'pvc' is a default, so its key item should get the italic font
+        self.assertIn('pvc', items)
+        items['pvc'].setFont.assert_called_with(italic_font_instance)
+
+        # 'segjarn' is an override, so its key item should NOT get the italic font
+        self.assertIn('segjarn', items)
+        items['segjarn'].setFont.assert_not_called()
 
     @patch('reneW.parameter_editor_dialog.json.dump')
     def test_save_data_with_overrides(self, mock_json_dump):
@@ -87,10 +109,14 @@ class TestReneWDialog(unittest.TestCase):
         self.dialog.mCheckBoxEnableHotspot = MagicMock()
         self.dialog.mSpinBoxHotspotThreshold = MagicMock()
         self.dialog.mSpinBoxHotspotRadius = MagicMock()
-        self.dialog.mTemporalGroupBox = MagicMock(isChecked=lambda: False)
-        self.dialog.mTemporalStartYearSpinBox = MagicMock(value=lambda: 2025)
-        self.dialog.mTemporalEndYearSpinBox = MagicMock(value=lambda: 2065)
-        self.dialog.mTemporalStepSpinBox = MagicMock(value=lambda: 5)
+        self.dialog.mTemporalGroupBox = MagicMock()
+        self.dialog.mTemporalGroupBox.isChecked.return_value = False  # Default to disabled
+        self.dialog.mTemporalStartYearSpinBox = MagicMock()
+        self.dialog.mTemporalStartYearSpinBox.value.return_value = 2025
+        self.dialog.mTemporalEndYearSpinBox = MagicMock()
+        self.dialog.mTemporalEndYearSpinBox.value.return_value = 2065
+        self.dialog.mTemporalStepSpinBox = MagicMock()
+        self.dialog.mTemporalStepSpinBox.value.return_value = 5
         self.dialog.tabs = []
 
     def test_validation_logic_invalid_temporal_range(self):

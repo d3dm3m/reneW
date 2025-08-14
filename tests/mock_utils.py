@@ -43,8 +43,11 @@ def setup_qgis_mocks():
     })
     pyqt_widgets_mock.QDialog = mock_qdialog_class
 
-    # Mock QgsVectorLayer as a class 'type'
-    mock_qgsvectorlayer_class = type('MockQgsVectorLayer', (object,), {})
+    # Mock QgsVectorLayer as a class 'type' with necessary attributes for validation
+    mock_qgsvectorlayer_class = type('MockQgsVectorLayer', (object,), {
+        # The dialog checks layer.fields().field(name).isNumeric()
+        'fields': MagicMock()
+    })
     qgis_core_mock.QgsVectorLayer = mock_qgsvectorlayer_class
 
     # Make QgsFeature return a new mock each time to allow testing feature creation
