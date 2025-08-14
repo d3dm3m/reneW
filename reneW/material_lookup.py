@@ -99,15 +99,17 @@ def _match_alias(material: str) -> Optional[str]:
                 return key
     return None
 
-def _as_mat(bucket: Dict, key: str) -> MaterialParams:
-    if key not in bucket:
-        # If the specific key isn't in the bucket (e.g. water vs sewer), fall back to 'ovrigt'
-        key = 'ovrigt'
-    if key not in bucket:
-        # If 'ovrigt' is also missing, raise an error
-        raise KeyError(f"Material key '{key}' and fallback 'ovrigt' not found in parameters")
-    rec = bucket[key]
-    return MaterialParams(mu=float(rec["mu"]), sigma=float(rec["sigma"]))
+def _as_mat(key: str, domain_bucket: Dict, default_bucket: Dict) -> Optional[MaterialParams]:
+    """Gets a material from domain-specific bucket, with fallback to default."""
+    # Prioritize domain-specific parameters
+    if key in domain_bucket:
+        rec = domain_bucket[key]
+        return MaterialParams(mu=float(rec["mu"]), sigma=float(rec["sigma"]))
+    # Fallback to default parameters
+    if key in default_bucket:
+        rec = default_bucket[key]
+        return MaterialParams(mu=float(rec["mu"]), sigma=float(rec["sigma"]))
+    return None
 
 def find_material_key(
     params: Dict,
@@ -122,21 +124,36 @@ def find_material_key(
     if dom not in ("water", "sewer"):
         raise KeyError(f"domain must be 'water' or 'sewer', got: {domain}")
 
+    # Get the domain-specific and default parameter buckets
     if dom == "water":
-        bucket = params.get("water")
+        domain_bucket = params.get("water", {})
     else: # sewer
         sec = _norm(subtype or "")
         if sec not in ("spill", "storm"):
             raise KeyError("For 'sewer', subtype must be 'spill' or 'storm'")
-        bucket = params.get("sewer", {}).get(sec)
+        domain_bucket = params.get("sewer", {}).get(sec, {})
 
-    if not bucket:
-        raise KeyError(f"parameters.json lacks required section for '{domain}/{subtype}'")
+    default_bucket = params.get("material_defaults", {})
+
+    if not domain_bucket and not default_bucket:
+        raise KeyError(f"parameters.json lacks required section for '{domain}/{subtype}' and 'material_defaults'")
 
     # Find the matching internal key from the alias list
     matched_key = _match_alias(material_name) or "ovrigt"
 
-    return matched_key, _as_mat(bucket, matched_key)
+    # Try to get the specific material, with fallback to default
+    material_params = _as_mat(matched_key, domain_bucket, default_bucket)
+
+    # If the specific material is not found, try the 'ovrigt' fallback
+    if not material_params:
+        material_params = _as_mat("ovrigt", domain_bucket, default_bucket)
+
+    # If 'ovrigt' is also not found anywhere, raise an error.
+    if not material_params:
+        raise KeyError(f"Material key '{matched_key}' and fallback 'ovrigt' not found in parameters")
+
+    return matched_key, material_params
+
 
 def find_liner_key(
     params: Dict,
@@ -147,16 +164,25 @@ def find_liner_key(
 ) -> Optional[Tuple[str, MaterialParams]]:
     """
     Finds the material parameters for a given renovation/lining method.
+    This also uses the domain -> default fallback logic.
     Returns None if no match is found.
     """
-    # Liners are assumed to have the same params in water/sewer for now
-    # We can use the water bucket as the primary source for liner params
-    bucket = params.get("water")
-    if not bucket:
+    matched_key = _match_alias(method_name)
+    if not (matched_key and 'foder' in matched_key):
         return None
 
-    matched_key = _match_alias(method_name)
-    if matched_key and 'foder' in matched_key:
-        return matched_key, _as_mat(bucket, matched_key)
+    dom = _norm(domain)
+    if dom == "water":
+        domain_bucket = params.get("water", {})
+    else: # sewer
+        sec = _norm(subtype or "")
+        domain_bucket = params.get("sewer", {}).get(sec, {})
+
+    default_bucket = params.get("material_defaults", {})
+
+    liner_params = _as_mat(matched_key, domain_bucket, default_bucket)
+
+    if liner_params:
+        return matched_key, liner_params
 
     return None

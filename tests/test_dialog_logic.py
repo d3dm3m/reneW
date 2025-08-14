@@ -33,7 +33,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from reneW.parameter_editor_dialog import ParameterEditorDialog
 
 class TestParameterEditorDialog(unittest.TestCase):
-    """Test suite for the ParameterEditorDialog logic."""
+    """Test suite for the refactored ParameterEditorDialog logic."""
 
     @unittest.mock.patch('reneW.parameter_editor_dialog.ParameterEditorDialog.__init__', lambda *args, **kwargs: None)
     def setUp(self):
@@ -42,74 +42,104 @@ class TestParameterEditorDialog(unittest.TestCase):
         # Manually create mock widgets and instance variables
         self.dialog.mPipeTypeCombo = MagicMock()
         self.dialog.mMaterialsTable = MagicMock()
-        self.dialog.mMunicipalitiesTable = MagicMock()
         self.dialog.mBtnAddMaterialRow = MagicMock()
         self.dialog.mBtnRemoveMaterialRow = MagicMock()
-        self.dialog.mBtnAddMunicipalityRow = MagicMock()
-        self.dialog.mBtnRemoveMunicipalityRow = MagicMock()
         self.dialog.mButtonBox = MagicMock()
         self.dialog.param_file = 'dummy_path.json'
-        self.dialog.data = {}
 
-    def test_populate_table(self):
-        """Test that the table is populated from the new nested data structure."""
-        # Sample data with the new nested structure
+        # Configure the QTableWidgetItem mock to return a new mock instance each time
+        # This is crucial for testing UI elements that are created in a loop.
+        MOCK_MODULES['qgis.PyQt.QtWidgets'].QTableWidgetItem.side_effect = lambda text='': MagicMock()
+
+        # Sample data with the new normalized structure
         self.dialog.data = {
-            "water": {
-                "Iron": {"mu": 100, "sigma": 20},
-                "Steel": {"mu": 80, "sigma": 15}
+            "material_defaults": {
+                "pvc": {"mu": 60, "sigma": 5},
+                "segjarn": {"mu": 90, "sigma": 5}
             },
-            "sewer": { "spill": { "Concrete": {"mu": 90, "sigma": 25}}}
+            "water": {
+                "segjarn": {"mu": 100, "sigma": 8} # Override for water
+            },
+            "sewer": { "spill": {}, "storm": {} }
         }
+
+    def test_populate_table_merged_view(self):
+        """Test that the table shows a merged view of defaults and overrides."""
+        qfont_mock_class = MOCK_MODULES['qgis.PyQt.QtGui'].QFont
+        italic_font_instance = qfont_mock_class.return_value
+        qtablewidgetitem_mock = MOCK_MODULES['qgis.PyQt.QtWidgets'].QTableWidgetItem
 
         # Simulate user selecting "water"
         self.dialog.mPipeTypeCombo.currentText.return_value = "water"
         self.dialog._populate_table()
 
-        # Check that the table was populated with 2 rows
+        # Check that an italic font was created for styling defaults
+        qfont_mock_class.assert_called()
+        italic_font_instance.setItalic.assert_called_with(True)
+
+        # There are 2 unique keys: 'pvc' (default) and 'segjarn' (override)
         self.assertEqual(self.dialog.mMaterialsTable.setRowCount.call_args[0][0], 2)
 
-        # Check that setItem was called with the correct values for Iron
-        # We can't easily check the QTableWidgetItem content, so we check the calls
-        self.dialog.mMaterialsTable.setItem.assert_any_call(0, 0, unittest.mock.ANY)
-        self.dialog.mMaterialsTable.setItem.assert_any_call(0, 1, unittest.mock.ANY)
-        self.dialog.mMaterialsTable.setItem.assert_any_call(0, 2, unittest.mock.ANY)
+        # Check that QTableWidgetItem was constructed with the correct text values
+        # Note: sorted order is 'pvc', then 'segjarn'
+        self.assertEqual(qtablewidgetitem_mock.call_args_list[0][0][0], 'pvc')
+        self.assertEqual(qtablewidgetitem_mock.call_args_list[1][0][0], '60') # default mu
+        self.assertEqual(qtablewidgetitem_mock.call_args_list[3][0][0], 'segjarn')
+        self.assertEqual(qtablewidgetitem_mock.call_args_list[4][0][0], '100') # override mu
+
+        # Get the item mocks from the setItem calls
+        calls = self.dialog.mMaterialsTable.setItem.call_args_list
+        pvc_key_item = calls[0][0][2]
+        segjarn_key_item = calls[3][0][2]
+
+        # Check that setFont was called for the default item ('pvc')
+        pvc_key_item.setFont.assert_called_with(italic_font_instance)
+
+        # Check that setFont was NOT called for the override item ('segjarn')
+        segjarn_key_item.setFont.assert_not_called()
 
     @unittest.mock.patch('reneW.parameter_editor_dialog.json.dump')
-    def test_save_data(self, mock_json_dump):
-        """Test that data is correctly read from the UI and saved to JSON."""
-        # Setup mock UI state for saving to "sewer/spill"
-        self.dialog.mPipeTypeCombo.currentText.return_value = "sewer/spill"
-        self.dialog.mMaterialsTable.rowCount.return_value = 1
+    def test_save_data_with_overrides(self, mock_json_dump):
+        """Test that only overrides and new materials are saved."""
+        # --- Setup ---
+        self.dialog.mPipeTypeCombo.currentText.return_value = "water"
+        self.dialog.mMaterialsTable.rowCount.return_value = 3
 
-        # Mock the data for a single row in the table: key, mu, sigma
+        # Mock the table items. Rows:
+        # 1. 'pvc': Same as default, should NOT be saved.
+        # 2. 'segjarn': Different from default, SHOULD be saved as override.
+        # 3. 'new_mat': New material, SHOULD be saved as override.
         def item_side_effect(row, col):
             mock_cell = MagicMock()
-            if col == 0:
-                mock_cell.text.return_value = 'PVC'
-            elif col == 1:
-                mock_cell.text.return_value = '120.5'
-            elif col == 2:
-                mock_cell.text.return_value = '30.1'
+            if row == 0: # pvc
+                mock_cell.text.return_value = ['pvc', '60', '5'][col].strip()
+            elif row == 1: # segjarn
+                mock_cell.text.return_value = ['segjarn', '110.5', '9.5'][col].strip()
+            elif row == 2: # new_mat
+                mock_cell.text.return_value = ['new_mat', '99', '9'][col].strip()
             return mock_cell
         self.dialog.mMaterialsTable.item.side_effect = item_side_effect
 
-        # Mock the initial data structure that will be modified
-        self.dialog.data = {"water": {}, "sewer": {"spill": {}, "storm": {}}}
-
-        # Mock the open function
+        # --- Action ---
         with unittest.mock.patch('builtins.open', unittest.mock.mock_open()):
             self.dialog.accept()  # This triggers the save
 
-        # Check that json.dump was called once
+        # --- Assertions ---
         mock_json_dump.assert_called_once()
-
-        # Check the data that was passed to json.dump
         written_data = mock_json_dump.call_args[0][0]
-        saved_params = written_data['sewer']['spill']['PVC']
 
-        self.assertEqual(saved_params['mu'], 120.5)
-        self.assertEqual(saved_params['sigma'], 30.1)
+        saved_water_bucket = written_data['water']
+
+        # 'pvc' should NOT be in the water bucket, as it matches the default
+        self.assertNotIn('pvc', saved_water_bucket)
+
+        # 'segjarn' SHOULD be in the water bucket with the new override values
+        self.assertIn('segjarn', saved_water_bucket)
+        self.assertEqual(saved_water_bucket['segjarn']['mu'], 110.5)
+
+        # 'new_mat' SHOULD be in the water bucket
+        self.assertIn('new_mat', saved_water_bucket)
+        self.assertEqual(saved_water_bucket['new_mat']['mu'], 99)
 
 
 from reneW.reneW_dialog import ReneWDialog
@@ -128,6 +158,9 @@ class TestReneWDialog(unittest.TestCase):
         self.dialog.mButtonBox = MagicMock()
         self.dialog.mStatusLabel = MagicMock()
         self.dialog.mMunicipalityFilterCombo = MagicMock()
+        self.dialog.mCheckBoxEnableHotspot = MagicMock()
+        self.dialog.mSpinBoxHotspotThreshold = MagicMock()
+        self.dialog.mSpinBoxHotspotRadius = MagicMock()
         self.dialog.tabs = []
         self.dialog.tr = lambda x: x  # Mock the translation function
 
