@@ -15,104 +15,173 @@
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
-    <layout class="QHBoxLayout" name="horizontalLayout">
-     <item>
-      <widget class="QLabel" name="label">
-       <property name="text">
-        <string>Pipe Type:</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QComboBox" name="mPipeTypeCombo"/>
-     </item>
-     <item>
-      <spacer name="horizontalSpacer">
-       <property name="orientation">
-        <enum>Qt::Horizontal</enum>
-       </property>
-       <property name="sizeHint" stdset="0">
-        <size>
-         <width>40</width>
-         <height>20</height>
-        </size>
-       </property>
-      </spacer>
-     </item>
-    </layout>
-   </item>
-   <item>
-    <widget class="QTableWidget" name="mMaterialsTable">
-     <property name="sortingEnabled">
-      <bool>true</bool>
+    <widget class="QTabWidget" name="mTabWidget">
+     <property name="currentIndex">
+      <number>0</number>
      </property>
-     <column>
-      <property name="text">
-       <string>Key</string>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string>Keywords (comma-separated)</string>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string>Year Min</string>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string>Year Max</string>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string>Param 'a'</string>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string>Param 'b'</string>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string>Param 'c'</string>
-      </property>
-     </column>
+     <widget class="QWidget" name="mMaterialsTab">
+      <attribute name="title">
+       <string>Materials</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="verticalLayout_2">
+       <item>
+        <layout class="QHBoxLayout" name="horizontalLayout">
+         <item>
+          <widget class="QLabel" name="label">
+           <property name="text">
+            <string>Pipe Type:</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QComboBox" name="mPipeTypeCombo"/>
+         </item>
+         <item>
+          <spacer name="horizontalSpacer">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QTableWidget" name="mMaterialsTable">
+         <property name="sortingEnabled">
+          <bool>true</bool>
+         </property>
+         <column>
+          <property name="text">
+           <string>Key</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Keywords (comma-separated)</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Year Min</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Year Max</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Param 'a'</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Param 'b'</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Param 'c'</string>
+          </property>
+         </column>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="horizontalLayout_2">
+         <item>
+          <spacer name="horizontalSpacer_2">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+         <item>
+          <widget class="QPushButton" name="mBtnAddMaterialRow">
+           <property name="text">
+            <string>Add Row</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="mBtnRemoveMaterialRow">
+           <property name="text">
+            <string>Remove Selected Row</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="mMunicipalitiesTab">
+      <attribute name="title">
+       <string>Municipalities</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="verticalLayout_3">
+       <item>
+        <widget class="QTableWidget" name="mMunicipalitiesTable">
+         <property name="sortingEnabled">
+          <bool>true</bool>
+         </property>
+         <column>
+          <property name="text">
+           <string>Code</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Name</string>
+          </property>
+         </column>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="horizontalLayout_3">
+         <item>
+          <spacer name="horizontalSpacer_3">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+         <item>
+          <widget class="QPushButton" name="mBtnAddMunicipalityRow">
+           <property name="text">
+            <string>Add Row</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="mBtnRemoveMunicipalityRow">
+           <property name="text">
+            <string>Remove Selected Row</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+      </layout>
+     </widget>
     </widget>
-   </item>
-   <item>
-    <layout class="QHBoxLayout" name="horizontalLayout_2">
-     <item>
-      <spacer name="horizontalSpacer_2">
-       <property name="orientation">
-        <enum>Qt::Horizontal</enum>
-       </property>
-       <property name="sizeHint" stdset="0">
-        <size>
-         <width>40</width>
-         <height>20</height>
-        </size>
-       </property>
-      </spacer>
-     </item>
-     <item>
-      <widget class="QPushButton" name="mBtnAddRow">
-       <property name="text">
-        <string>Add Row</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QPushButton" name="mBtnRemoveRow">
-       <property name="text">
-        <string>Remove Selected Row</string>
-       </property>
-      </widget>
-     </item>
-    </layout>
    </item>
    <item>
     <widget class="QDialogButtonBox" name="mButtonBox">

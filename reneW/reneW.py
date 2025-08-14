@@ -123,6 +123,7 @@ class ReneW:
             analysis_configs = self.dlg.get_analysis_configs()
             use_dimension_weighting = self.dlg.useDimensionWeighting()
             dimension_factor = self.dlg.dimensionFactor()
+            selected_municipality_code = self.dlg.get_selected_municipality_code()
 
             if not analysis_configs:
                 self.iface.messageBar().pushMessage(tr("Info"), tr(
@@ -155,34 +156,27 @@ class ReneW:
                 layer = config['layer']
                 QgsMessageLog.logMessage(tr("Processing layer: {0}").format(
                     layer.name()), 'reneW', Qgis.Info)
-                # Vatten, Spillvatten, or Dagvatten
                 layer_type = config['type']
+                municipality_field = config.get('municipality_field')
 
                 output_field_name = 'fornyelsebehov'
                 provider = layer.dataProvider()
                 fields = provider.fields()
 
                 if fields.indexFromName(output_field_name) == -1:
-                    provider.addAttributes(
-                        [QgsField(output_field_name, QVariant.Double)])
+                    provider.addAttributes([QgsField(output_field_name, QVariant.Double)])
                     layer.updateFields()
 
                 material_idx = fields.indexFromName(config['material_field'])
                 year_idx = fields.indexFromName(config['year_field'])
                 dimension_idx = fields.indexFromName(config['dimension_field'])
-                reno_year_idx = fields.indexFromName(config['reno_year_field'])
-                reno_method_idx = fields.indexFromName(
-                    config['reno_method_field'])
+                muni_idx = fields.indexFromName(municipality_field) if municipality_field else -1
                 output_idx = fields.indexFromName(output_field_name)
 
-                # Only the base fields are strictly required
                 if any(idx == -1 for idx in [material_idx, year_idx, dimension_idx]):
                     msg = tr(
-                        "One of the required fields (material, year, "
-                        "dimension) could not be found in layer '{0}'. "
-                        "Skipping.").format(layer.name())
-                    self.iface.messageBar().pushMessage(
-                        tr("Error"), msg, level=1)
+                        "One of the required fields (material, year, dimension) could not be found in layer '{0}'. Skipping.").format(layer.name())
+                    self.iface.messageBar().pushMessage(tr("Error"), msg, level=1)
                     continue
 
                 layer.startEditing()
@@ -190,64 +184,53 @@ class ReneW:
                     processed_features += 1
                     progress_bar.setValue(processed_features)
                     attrs = feature.attributes()
-                    material = attrs[material_idx]
 
+                    # --- Municipality Check ---
+                    if selected_municipality_code is not None and muni_idx != -1:
+                        feature_municipality = attrs[muni_idx]
+                        if feature_municipality != selected_municipality_code:
+                            continue
+
+                    # --- Invalid Year Check ---
+                    year_val = attrs[year_idx]
+                    if year_val is None or str(year_val).strip() in ['1900', 'null', 'NULL']:
+                        QgsMessageLog.logMessage(
+                            tr("Skipping feature {0} in layer {1} due to invalid construction year: {2}").format(feature.id(), layer.name(), year_val),
+                            'reneW', Qgis.Warning)
+                        continue
+
+                    material = attrs[material_idx]
                     try:
-                        installation_year = int(attrs[year_idx])
-                    except (ValueError, TypeError, AttributeError):
+                        installation_year = int(year_val)
+                    except (ValueError, TypeError):
                         installation_year = current_year
 
-                    # Default age is based on installation year
                     age = max(0, current_year - installation_year)
 
-                    # Check for renovation data and override age if applicable
-                    if config.get('reno_method_field') and config.get('reno_year_field'):
-                        reno_method_idx = fields.indexFromName(
-                            config['reno_method_field'])
-                        reno_year_idx = fields.indexFromName(
-                            config['reno_year_field'])
+                    # Renovation logic
+                    if config.get('reno_year_field'):
+                        reno_year_idx = fields.indexFromName(config['reno_year_field'])
+                        if reno_year_idx != -1 and attrs[reno_year_idx]:
+                            try:
+                                reno_year = int(attrs[reno_year_idx])
+                                age = max(0, current_year - reno_year)
+                            except (ValueError, TypeError):
+                                pass
 
-                        if reno_method_idx != -1 and reno_year_idx != -1:
-                            reno_method = attrs[reno_method_idx]
-                            if reno_method and isinstance(reno_method, str):
-                                if 'infodring' in reno_method.lower() or 'strumpa' in reno_method.lower():
-                                    try:
-                                        reno_year = int(attrs[reno_year_idx])
-                                        age = max(0, current_year - reno_year)
-                                    except (ValueError, TypeError, AttributeError):
-                                        pass  # Keep original age if reno year is invalid
-
-                    # Handle dimension parsing (e.g., "225_I")
                     dimension_val = attrs[dimension_idx]
-                    dimension = 0.0
-                    if isinstance(dimension_val, (int, float)):
-                        dimension = float(dimension_val)
-                    elif isinstance(dimension_val, str):
-                        try:
-                            # Extract numeric part before any non-numeric characters
-                            numeric_part = ''.join(
-                                filter(lambda c: c.isdigit() or c == '.',
-                                       dimension_val.split('_')[0].split('/')[0]))
-                            if numeric_part:
-                                dimension = float(numeric_part)
-                        except (ValueError, TypeError):
-                            dimension = 0.0
 
                     renewal_need = calculation_logic.calculate_renewal_need(
-                        pipeline_type=layer_type,  # Pass the specific layer type
+                        pipeline_type=layer_type,
                         material=material,
                         age=age,
                         year=installation_year,
-                        dimension=dimension,
+                        dimension=dimension_val,
                         use_dimension_weighting=use_dimension_weighting,
                         dimension_factor=dimension_factor
                     )
 
-                    layer.changeAttributeValue(
-                        feature.id(), output_idx, renewal_need)
+                    layer.changeAttributeValue(feature.id(), output_idx, renewal_need)
 
-                    # Collect high-risk results for the table
-                    # Using a threshold of 0.5 as a default for "high-risk"
                     if renewal_need >= 0.5:
                         high_risk_results.append({
                             'layer_name': layer.name(),
@@ -260,17 +243,13 @@ class ReneW:
 
                 if layer.commitChanges():
                     self.iface.messageBar().pushMessage(
-                        tr("Success"),
-                        tr("Calculation complete for layer '{0}'.").format(
-                            layer.name()),
+                        tr("Success"), tr("Calculation complete for layer '{0}'.").format(layer.name()),
                         level=0, duration=4)
                     processed_layers += 1
                 else:
                     layer.rollBack()
                     self.iface.messageBar().pushMessage(
-                        tr("Error"),
-                        tr("Could not save changes for layer '{0}'.").format(
-                            layer.name()),
+                        tr("Error"), tr("Could not save changes for layer '{0}'.").format(layer.name()),
                         level=1)
 
             if processed_layers > 0:

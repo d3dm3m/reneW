@@ -42,8 +42,11 @@ class TestParameterEditorDialog(unittest.TestCase):
         # Manually create mock widgets and instance variables
         self.dialog.mPipeTypeCombo = MagicMock()
         self.dialog.mMaterialsTable = MagicMock()
-        self.dialog.mBtnAddRow = MagicMock()
-        self.dialog.mBtnRemoveRow = MagicMock()
+        self.dialog.mMunicipalitiesTable = MagicMock()
+        self.dialog.mBtnAddMaterialRow = MagicMock()
+        self.dialog.mBtnRemoveMaterialRow = MagicMock()
+        self.dialog.mBtnAddMunicipalityRow = MagicMock()
+        self.dialog.mBtnRemoveMunicipalityRow = MagicMock()
         self.dialog.mButtonBox = MagicMock()
         self.dialog.param_file = 'dummy_path.json'
         self.dialog.data = {}
@@ -125,8 +128,27 @@ class TestReneWDialog(unittest.TestCase):
         self.dialog.mSpinBoxHotspotDistance = MagicMock()
         self.dialog.mButtonBox = MagicMock()
         self.dialog.mStatusLabel = MagicMock()
+        self.dialog.mMunicipalityFilterCombo = MagicMock()
         self.dialog.tabs = []
         self.dialog.tr = lambda x: x  # Mock the translation function
+
+    def test_populate_municipality_filter(self):
+        """Test that the municipality filter is populated correctly."""
+        sample_data = {
+            "municipalities": [
+                {"code": 1, "name": "Stockholm"},
+                {"code": 2, "name": "Uppsala"}
+            ]
+        }
+        # Mock the open function to return our sample data
+        m = unittest.mock.mock_open(read_data=json.dumps(sample_data))
+        with unittest.mock.patch('builtins.open', m):
+            self.dialog._populate_municipality_filter()
+
+            # Check that the combo box was populated correctly
+            self.dialog.mMunicipalityFilterCombo.addItem.assert_any_call("All", userData=None)
+            self.dialog.mMunicipalityFilterCombo.addItem.assert_any_call("Stockholm", userData=1)
+            self.dialog.mMunicipalityFilterCombo.addItem.assert_any_call("Uppsala", userData=2)
 
     def test_save_and_load_settings(self):
         """Test that settings are saved and loaded with dynamic keys."""
@@ -135,6 +157,7 @@ class TestReneWDialog(unittest.TestCase):
             'name': 'Water',
             'check': MagicMock(),
             'layer_combo': MagicMock(),
+            'muni_combo': MagicMock(),
             'mat_combo': MagicMock(),
             'year_combo': MagicMock(),
             'dim_combo': MagicMock(),
@@ -147,6 +170,7 @@ class TestReneWDialog(unittest.TestCase):
         mock_tab['check'].isChecked.return_value = True
         mock_tab['layer_combo'].currentLayer.return_value.id.return_value = 'layer123'
         mock_tab['mat_combo'].currentField.return_value = 'material_field'
+        mock_tab['muni_combo'].currentField.return_value = 'municipality_field'
 
         mock_project = MagicMock()
         with unittest.mock.patch.object(self.dialog, 'useDimensionWeighting', return_value=True), \
@@ -161,6 +185,7 @@ class TestReneWDialog(unittest.TestCase):
             mock_project.writeEntryBool.assert_any_call('reneW', 'tab_Water_enabled', True)
             mock_project.writeEntry.assert_any_call('reneW', 'tab_Water_layer', 'layer123')
             mock_project.writeEntry.assert_any_call('reneW', 'tab_Water_materialField', 'material_field')
+            mock_project.writeEntry.assert_any_call('reneW', 'tab_Water_municipalityField', 'municipality_field')
             mock_project.writeEntryBool.assert_any_call('reneW', 'dimensionWeightingEnabled', True)
             mock_project.writeEntryDouble.assert_any_call('reneW', 'dimensionFactor', 0.005)
             mock_project.writeEntryBool.assert_any_call('reneW', 'hotspotEnabled', True)
@@ -174,6 +199,8 @@ class TestReneWDialog(unittest.TestCase):
                 return ('layer123', True)
             if key == 'tab_Water_materialField':
                 return ('material_field', True)
+            if key == 'tab_Water_municipalityField':
+                return ('municipality_field', True)
             return (default, True)
 
         mock_project.readBoolEntry.return_value = (True, True)
@@ -187,6 +214,7 @@ class TestReneWDialog(unittest.TestCase):
             # Check that settings were loaded and widgets updated
             mock_tab['check'].setChecked.assert_called_with(True)
             mock_tab['mat_combo'].setField.assert_called_with('material_field')
+            mock_tab['muni_combo'].setField.assert_called_with('municipality_field')
 
     def test_validation_logic_valid_case(self):
         """Test validation logic: Valid inputs with a text dimension field."""
