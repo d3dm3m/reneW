@@ -16,7 +16,7 @@ except Exception:  # pragma: no cover
     _scipy_norm = None
 
 SQRT2 = math.sqrt(2.0)
-Z_0P9 = 1.2815515655446004  # Phi^{-1}(0.9) – used only by derive_sigma_from_t50_t10
+Z_0P9 = 1.2815515655446004  # Phi^{-1}(0.9) – used only by derive_sigma_from_t50_t90
 
 def normal_cdf(x: float, mu: float, sigma: float) -> float:
     """Return Phi((x - mu)/sigma). Uses SciPy if available; otherwise math.erf."""
@@ -85,9 +85,11 @@ def cumulative_by_period(values: Iterable[float]) -> List[float]:
         out.append(acc)
     return out
 
-def derive_sigma_from_t50_t10(t50: float, t10: float) -> float:
-    """For a normal model: mu ≈ t50; sigma ≈ (t10 - t50) / z_{0.9}."""
-    return (t10 - t50) / Z_0P9
+def derive_sigma_from_t50_t90(t50: float, t90: float) -> float:
+    """For a normal model: mu ≈ t50; sigma ≈ (t90 - t50) / z_{0.9}."""
+    if t90 <= t50:
+        return 0.0
+    return (t90 - t50) / Z_0P9
 
 def decades_from(start: int, n_periods: int) -> List[Tuple[int, int]]:
     return [(start + 10*i, start + 10*(i+1)) for i in range(n_periods)]

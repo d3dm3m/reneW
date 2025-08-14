@@ -28,7 +28,7 @@ from reneW.calculation_logic import (
     renewal_totals,
     decades_from,
     cumulative_by_period,
-    derive_sigma_from_t50_t10,
+    derive_sigma_from_t50_t90,
 )
 
 
@@ -63,10 +63,17 @@ class TestCalculationLogic(unittest.TestCase):
         self.assertLessEqual(r, 1.0)
         self.assertGreaterEqual(r, 0.0)
 
-    def test_sigma_from_t50_t10(self):
-        # Dagvatten utbyggnad: t50=125, t10=200 → sigma ≈ 58.5
-        sigma = derive_sigma_from_t50_t10(125.0, 200.0)
+    def test_sigma_from_t50_t90(self):
+        # Dagvatten utbyggnad: t50=125, t90=200 → sigma ≈ 58.5
+        sigma = derive_sigma_from_t50_t90(t50=125.0, t90=200.0)
         self.assertAlmostEqual(sigma, 58.5, places=1)
+
+    def test_sigma_from_t50_t90_invalid(self):
+        # t90 must be > t50
+        sigma = derive_sigma_from_t50_t90(t50=125.0, t90=125.0)
+        self.assertAlmostEqual(sigma, 0.0, places=9)
+        sigma = derive_sigma_from_t50_t90(t50=125.0, t90=100.0)
+        self.assertAlmostEqual(sigma, 0.0, places=9)
 
 
 if __name__ == '__main__':
