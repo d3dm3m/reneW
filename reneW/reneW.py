@@ -5,10 +5,13 @@ from datetime import datetime
 from qgis.PyQt.QtWidgets import QAction, QProgressBar
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtCore import QVariant, QCoreApplication, Qt
+from qgis.PyQt.QtGui import QColor
 from qgis.core import (
     QgsProject, QgsVectorLayer, QgsField, QgsGeometry, QgsFeature,
     QgsFillSymbol, QgsSimpleFillSymbolLayer, QgsMessageLog, Qgis, QgsBlurEffect,
-    QgsFields, QgsFeatureSink, QgsFeatureRequest, QgsProcessing)
+    QgsFields, QgsFeatureSink, QgsFeatureRequest, QgsProcessing, QgsWkbTypes,
+    QgsCategorizedRenderer, QgsGraduatedRenderer, QgsRendererRange, QgsSymbol,
+    QgsStyle, QgsGlowSymbolLayer, QgsVectorLayerTemporalProperties)
 from qgis.processing import QgsProcessingAlgorithm, QgsProcessingFeedback
 
 # Import the code for the dialog and the calculation logic
@@ -107,7 +110,7 @@ class ReneW:
         del self.toolbar
 
     def run(self):
-        """Run method that performs all the real work"""
+        """Run method that configures and dispatches the analysis."""
         try:
             param_path = os.path.join(self.plugin_dir, 'parameters.json')
             params_data = material_lookup.load_parameters(param_path)
@@ -115,8 +118,7 @@ class ReneW:
             self.iface.messageBar().pushMessage(
                 tr("Error"),
                 tr("Failed to load or parse parameters.json: {0}").format(e),
-                level=2,
-                duration=10)
+                level=2, duration=10)
             return
 
         if self.dlg is None:
@@ -128,187 +130,326 @@ class ReneW:
 
         if result:
             self.dlg.save_settings()
+            if self.dlg.useTemporalAnalysis():
+                self._run_temporal_analysis(params_data)
+            else:
+                self._run_standard_analysis(params_data)
 
-            analysis_configs = self.dlg.get_analysis_configs()
-            use_dimension_weighting = self.dlg.useDimensionWeighting()
-            dimension_factor = self.dlg.dimensionFactor()
-            selected_municipality_code = self.dlg.get_selected_municipality_code()
+    def _run_standard_analysis(self, params_data):
+        """Performs the standard, single-year renewal need analysis."""
+        analysis_configs = self.dlg.get_analysis_configs()
+        if not analysis_configs:
+            self.iface.messageBar().pushMessage(tr("Info"), tr("No layers selected for analysis."), level=0, duration=3)
+            return
 
-            if not analysis_configs:
-                self.iface.messageBar().pushMessage(tr("Info"), tr("No layers selected for analysis."), level=0, duration=3)
-                return
+        QgsMessageLog.logMessage(tr("Starting reneW standard analysis."), 'reneW', Qgis.Info)
+        # ... (rest of the standard analysis logic)
+        use_dimension_weighting = self.dlg.useDimensionWeighting()
+        dimension_factor = self.dlg.dimensionFactor()
+        selected_municipality_code = self.dlg.get_selected_municipality_code()
 
-            QgsMessageLog.logMessage(tr("Starting reneW analysis."), 'reneW', Qgis.Info)
+        total_features = sum(config['layer'].featureCount() for config in analysis_configs)
+        progress_bar = QProgressBar()
+        progress_bar.setMaximum(total_features)
+        progress_bar.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        message_bar_item = self.iface.messageBar().createMessage(tr("Calculating renewal need..."))
+        message_bar_item.layout().addWidget(progress_bar)
+        self.iface.messageBar().pushWidget(message_bar_item, Qgis.Info)
 
-            total_features = sum(config['layer'].featureCount() for config in analysis_configs)
-            progress_bar = QProgressBar()
-            progress_bar.setMaximum(total_features)
-            progress_bar.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            message_bar_item = self.iface.messageBar().createMessage(tr("Calculating renewal need..."))
-            message_bar_item.layout().addWidget(progress_bar)
-            self.iface.messageBar().pushWidget(message_bar_item, Qgis.Info)
+        processed_features = 0
+        processed_layers = 0
+        high_risk_results = []
+        current_year = datetime.now().year
 
-            processed_features = 0
-            processed_layers = 0
-            high_risk_results = []
-            current_year = datetime.now().year
+        for config in analysis_configs:
+            layer = config['layer']
+            layer_name = layer.name()
+            QgsMessageLog.logMessage(tr("Processing layer: {0}").format(layer_name), 'reneW', Qgis.Info)
 
-            for config in analysis_configs:
-                layer = config['layer']
-                layer_name = layer.name()
-                QgsMessageLog.logMessage(tr("Processing layer: {0}").format(layer_name), 'reneW', Qgis.Info)
+            domain = 'water' if 'water' in config['type'].lower() else 'sewer'
+            subtype = 'spill' if 'spill' in config['type'].lower() else ('storm' if 'storm' in config['type'].lower() else None)
 
-                domain = 'water' if 'vatten' in config['type'].lower() else 'sewer'
-                subtype = 'spill' if 'spill' in config['type'].lower() else ('storm' if 'dag' in config['type'].lower() else None)
+            output_field_name = 'fornyelsebehov'
+            provider = layer.dataProvider()
+            fields = provider.fields()
 
-                output_field_name = 'fornyelsebehov'
-                provider = layer.dataProvider()
-                fields = provider.fields()
+            if fields.indexFromName(output_field_name) == -1:
+                provider.addAttributes([QgsField(output_field_name, QVariant.Double)])
+                layer.updateFields()
 
-                if fields.indexFromName(output_field_name) == -1:
-                    provider.addAttributes([QgsField(output_field_name, QVariant.Double)])
-                    layer.updateFields()
+            required_fields = ['material_field', 'year_field', 'dimension_field']
+            if not all(config.get(f) for f in required_fields):
+                self.iface.messageBar().pushMessage(tr("Error"), tr("A required field is not selected for layer '{0}'. Skipping.").format(layer_name), level=1)
+                continue
 
-                required_fields = ['material_field', 'year_field', 'dimension_field']
-                if not all(config.get(f) for f in required_fields):
-                    self.iface.messageBar().pushMessage(tr("Error"), tr("A required field is not selected for layer '{0}'. Skipping.").format(layer_name), level=1)
+            field_indices = {f: fields.indexFromName(config[f]) for f in required_fields if config.get(f)}
+            if config.get('reno_year_field'):
+                field_indices['reno_year_field'] = fields.indexFromName(config['reno_year_field'])
+            if config.get('reno_method_field'):
+                field_indices['reno_method_field'] = fields.indexFromName(config['reno_method_field'])
+
+            muni_idx = fields.indexFromName(config['municipality_field']) if config.get('municipality_field') else -1
+            output_idx = fields.indexFromName(output_field_name)
+
+            layer.startEditing()
+            for feature in layer.getFeatures():
+                processed_features += 1
+                progress_bar.setValue(processed_features)
+                attrs = feature.attributes()
+
+                if selected_municipality_code is not None and muni_idx != -1 and attrs[muni_idx] != selected_municipality_code:
                     continue
 
-                field_indices = {f: fields.indexFromName(config[f]) for f in required_fields if config.get(f)}
-                # Add optional renovation fields
-                if config.get('reno_year_field'):
-                    field_indices['reno_year_field'] = fields.indexFromName(config['reno_year_field'])
-                if config.get('reno_method_field'):
-                    field_indices['reno_method_field'] = fields.indexFromName(config['reno_method_field'])
+                year_val = attrs[field_indices['year_field']]
+                if year_val is None or str(year_val).strip() in ['1900', 'null', 'NULL']:
+                    continue
+                try:
+                    installation_year = int(year_val)
+                except (ValueError, TypeError):
+                    continue
 
-                muni_idx = fields.indexFromName(config['municipality_field']) if config.get('municipality_field') else -1
-                output_idx = fields.indexFromName(output_field_name)
+                effective_install_year = installation_year
+                has_been_renovated = False
+                if 'reno_year_field' in field_indices:
+                    reno_year_val = attrs[field_indices['reno_year_field']]
+                    if reno_year_val:
+                        try:
+                            renovation_year = int(reno_year_val)
+                            if renovation_year > installation_year:
+                                effective_install_year = renovation_year
+                                has_been_renovated = True
+                        except (ValueError, TypeError):
+                            pass
 
-                layer.startEditing()
-                for feature in layer.getFeatures():
-                    processed_features += 1
-                    progress_bar.setValue(processed_features)
-                    attrs = feature.attributes()
+                age = max(0, current_year - effective_install_year)
+                material_name = attrs[field_indices['material_field']]
+                try:
+                    key, params = material_lookup.find_material_key(params_data, domain=domain, subtype=subtype, material_name=str(material_name), year=installation_year)
+                except KeyError as e:
+                    QgsMessageLog.logMessage(f"Material lookup failed for '{material_name}': {e}", 'reneW', Qgis.Warning)
+                    continue
 
-                    if selected_municipality_code is not None and muni_idx != -1:
-                        if attrs[muni_idx] != selected_municipality_code:
-                            continue
+                if has_been_renovated and 'reno_method_field' in field_indices:
+                    reno_method_val = attrs[field_indices['reno_method_field']]
+                    if isinstance(reno_method_val, str) and reno_method_val.strip():
+                        liner_result = material_lookup.find_liner_key(params_data, domain=domain, subtype=subtype, method_name=reno_method_val)
+                        if liner_result:
+                            key, params = liner_result
+                            material_name = f"{material_name} (Lined: {reno_method_val})"
 
-                    year_val = attrs[field_indices['year_field']]
-                    if year_val is None or str(year_val).strip() in ['1900', 'null', 'NULL']:
-                        continue
+                cohort = calculation_logic.Cohort(length_km=1.0, install_year=effective_install_year, material_key=key)
+                renewal_need = calculation_logic.renewal_for_cohort_period(cohort, current_year, current_year + 1, params)
 
-                    try:
-                        installation_year = int(year_val)
-                    except (ValueError, TypeError):
-                        continue
+                if use_dimension_weighting:
+                    dimension_val = attrs[field_indices['dimension_field']]
+                    parsed_dimension = self._parse_dimension(dimension_val)
+                    if parsed_dimension > 0 and dimension_factor > 0:
+                        weight = 1.0 + (parsed_dimension * dimension_factor)
+                        renewal_need *= weight
 
-                    effective_install_year = installation_year
-                    has_been_renovated = False
-                    # --- Renovation Logic ---
-                    if 'reno_year_field' in field_indices:
-                        reno_year_val = attrs[field_indices['reno_year_field']]
-                        if reno_year_val:
-                            try:
-                                renovation_year = int(reno_year_val)
-                                if renovation_year > installation_year:
-                                    effective_install_year = renovation_year
-                                    has_been_renovated = True
-                            except (ValueError, TypeError):
-                                pass # Ignore non-integer renovation years
+                layer.changeAttributeValue(feature.id(), output_idx, renewal_need)
+                if renewal_need >= 0.5:
+                    high_risk_results.append({'layer_name': layer_name, 'layer_id': layer.id(), 'feature_id': feature.id(), 'material': material_name, 'age': age, 'renewal_need': renewal_need})
 
-                    age = max(0, current_year - effective_install_year)
-                    material_name = attrs[field_indices['material_field']]
+            if layer.commitChanges():
+                self.iface.messageBar().pushMessage(tr("Success"), tr("Calculation complete for layer '{0}'.").format(layer_name), level=0, duration=4)
+                processed_layers += 1
+            else:
+                layer.rollBack()
+                self.iface.messageBar().pushMessage(tr("Error"), tr("Could not save changes for layer '{0}'.").format(layer_name), level=1)
 
-                    # Default to original material properties
-                    try:
-                        key, params = material_lookup.find_material_key(
-                            params_data,
-                            domain=domain,
-                            subtype=subtype,
-                            material_name=str(material_name),
-                            year=installation_year
-                        )
-                    except KeyError as e:
-                        QgsMessageLog.logMessage(f"Material lookup failed for '{material_name}': {e}", 'reneW', Qgis.Warning)
-                        continue
+        self.iface.messageBar().clearWidgets()
+        if processed_layers > 0:
+            self.iface.messageBar().pushMessage(tr("Info"), tr("Analysis complete for {0} layers.").format(processed_layers), level=0, duration=5)
+            self.iface.mapCanvas().refresh()
 
-                    # If renovated, check if the method implies new material properties (lining)
-                    if has_been_renovated and 'reno_method_field' in field_indices:
-                        reno_method_val = attrs[field_indices['reno_method_field']]
-                        if isinstance(reno_method_val, str) and reno_method_val.strip():
-                            liner_result = material_lookup.find_liner_key(
-                                params_data,
-                                domain=domain,
-                                subtype=subtype,
-                                method_name=reno_method_val
-                            )
-                            if liner_result:
-                                key, params = liner_result # Override with liner params
-                                material_name = f"{material_name} (Lined: {reno_method_val})"
+        hotspot_layer = None
+        if self.dlg.useHotspotAnalysis():
+            hotspot_threshold = self.dlg.hotspotThreshold()
+            hotspot_radius = self.dlg.hotspotRadius()
+            hotspot_layer = self._run_hotspot_analysis(analysis_configs, hotspot_threshold, hotspot_radius)
+            if hotspot_layer:
+                QgsProject.instance().addMapLayer(hotspot_layer)
+                self.iface.messageBar().pushMessage(tr("Success"), tr("Hotspot analysis complete."), level=0, duration=4)
 
-                    # The cohort's age is determined by the effective_install_year (post-renovation).
+        if high_risk_results:
+            high_risk_results.sort(key=lambda x: x['renewal_need'], reverse=True)
+            hotspot_count = hotspot_layer.featureCount() if hotspot_layer else 0
+            self.results_dialog = ResultsDialog(parent=self.iface.mainWindow(), hotspot_count=hotspot_count)
+            self.results_dialog.zoom_to_feature_signal.connect(self._handle_zoom_to_feature)
+            self.results_dialog.populate_table(high_risk_results)
+            self.results_dialog.show()
+
+        QgsMessageLog.logMessage(tr("reneW standard analysis finished."), 'reneW', Qgis.Success)
+
+    def _run_temporal_analysis(self, params_data):
+        """Performs the time-series analysis and creates a new time-aware layer."""
+        analysis_configs = self.dlg.get_analysis_configs()
+        if not analysis_configs:
+            self.iface.messageBar().pushMessage(tr("Info"), tr("No layers selected for analysis."), level=0, duration=3)
+            return
+
+        QgsMessageLog.logMessage(tr("Starting reneW temporal analysis."), 'reneW', Qgis.Info)
+
+        start_year = self.dlg.temporalStartYear()
+        end_year = self.dlg.temporalEndYear()
+        step = self.dlg.temporalStep()
+
+        # Define fields for the new layer
+        fields = QgsFields()
+        fields.append(QgsField("pipe_id", QVariant.String))
+        fields.append(QgsField("source_layer", QVariant.String))
+        fields.append(QgsField("year", QVariant.Int))
+        fields.append(QgsField("pipe_type", QVariant.String))
+        fields.append(QgsField("renewal_need", QVariant.Double))
+
+        # Create the memory layer
+        temporal_layer = QgsVectorLayer(f"LineString?crs={QgsProject.instance().crs().authid()}", "Temporal Renewal Need", "memory")
+        provider = temporal_layer.dataProvider()
+        provider.addAttributes(fields)
+        temporal_layer.updateFields()
+
+        # --- Progress Bar Setup ---
+        total_calcs = 0
+        for config in analysis_configs:
+            total_calcs += config['layer'].featureCount() * len(range(start_year, end_year + 1, step))
+
+        progress_bar = QProgressBar()
+        progress_bar.setMaximum(total_calcs)
+        progress_bar.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        message_bar_item = self.iface.messageBar().createMessage(tr("Calculating temporal renewal need..."))
+        message_bar_item.layout().addWidget(progress_bar)
+        self.iface.messageBar().pushWidget(message_bar_item, Qgis.Info)
+        processed_calcs = 0
+
+        # --- Main Processing Loop ---
+        temporal_layer.startEditing()
+        for config in analysis_configs:
+            layer = config['layer']
+            layer_name = layer.name()
+
+            domain = 'water' if 'water' in config['type'].lower() else 'sewer'
+            subtype = 'spill' if 'spill' in config['type'].lower() else ('storm' if 'storm' in config['type'].lower() else None)
+            pipe_type_name = config['type']
+
+            required_fields = ['material_field', 'year_field']
+            if not all(config.get(f) for f in required_fields):
+                continue # Skip if essential fields are missing
+
+            field_indices = {f: layer.fields().indexFromName(config[f]) for f in required_fields if config.get(f)}
+            if config.get('reno_year_field'):
+                field_indices['reno_year_field'] = layer.fields().indexFromName(config['reno_year_field'])
+            if config.get('reno_method_field'):
+                field_indices['reno_method_field'] = layer.fields().indexFromName(config['reno_method_field'])
+
+            for feature in layer.getFeatures():
+                attrs = feature.attributes()
+
+                year_val = attrs[field_indices['year_field']]
+                if year_val is None or str(year_val).strip() in ['1900', 'null', 'NULL']:
+                    continue
+                try:
+                    installation_year = int(year_val)
+                except (ValueError, TypeError):
+                    continue
+
+                effective_install_year = installation_year
+                if 'reno_year_field' in field_indices:
+                    reno_year_val = attrs[field_indices['reno_year_field']]
+                    if reno_year_val:
+                        try:
+                            renovation_year = int(reno_year_val)
+                            if renovation_year > installation_year:
+                                effective_install_year = renovation_year
+                        except (ValueError, TypeError):
+                            pass
+
+                material_name = str(attrs[field_indices['material_field']])
+                try:
+                    key, params = material_lookup.find_material_key(params_data, domain=domain, subtype=subtype, material_name=material_name, year=installation_year)
+                except KeyError as e:
+                    QgsMessageLog.logMessage(f"Material lookup failed for '{material_name}': {e}", 'reneW', Qgis.Warning)
+                    continue
+
+                for year in range(start_year, end_year + 1, step):
+                    processed_calcs += 1
+                    progress_bar.setValue(processed_calcs)
+
                     cohort = calculation_logic.Cohort(length_km=1.0, install_year=effective_install_year, material_key=key)
+                    renewal_need = calculation_logic.renewal_for_cohort_period(cohort, year, year + 1, params)
 
-                    # Calculate renewal need for the next year
-                    renewal_need = calculation_logic.renewal_for_cohort_period(
-                        cohort, current_year, current_year + 1, params
-                    )
+                    # Create a new feature for the temporal layer
+                    out_feat = QgsFeature(fields)
+                    out_feat.setGeometry(feature.geometry())
+                    out_feat.setAttributes([
+                        feature.id(),
+                        layer_name,
+                        year,
+                        pipe_type_name,
+                        renewal_need
+                    ])
+                    provider.addFeature(out_feat)
 
-                    # The old logic had dimension weighting. The new model does not explicitly include it.
-                    # For now, we apply it on top, as before.
-                    if use_dimension_weighting:
-                        dimension_val = attrs[field_indices['dimension_field']]
-                        parsed_dimension = self._parse_dimension(dimension_val)
-                        if parsed_dimension > 0 and dimension_factor > 0:
-                            weight = 1.0 + (parsed_dimension * dimension_factor)
-                            renewal_need *= weight
+        temporal_layer.commitChanges()
+        self.iface.messageBar().clearWidgets()
 
-                    layer.changeAttributeValue(feature.id(), output_idx, renewal_need)
+        self._style_temporal_layer(temporal_layer)
+        QgsProject.instance().addMapLayer(temporal_layer)
+        self.iface.messageBar().pushMessage(tr("Success"), tr("Temporal analysis layer created."), level=0, duration=5)
 
-                    if renewal_need >= 0.5:
-                        high_risk_results.append({
-                            'layer_name': layer_name,
-                            'layer_id': layer.id(),
-                            'feature_id': feature.id(),
-                            'material': material_name,
-                            'age': age,
-                            'renewal_need': renewal_need
-                        })
+        QgsMessageLog.logMessage(tr("reneW temporal analysis finished."), 'reneW', Qgis.Success)
 
-                if layer.commitChanges():
-                    self.iface.messageBar().pushMessage(tr("Success"), tr("Calculation complete for layer '{0}'.").format(layer_name), level=0, duration=4)
-                    processed_layers += 1
-                else:
-                    layer.rollBack()
-                    self.iface.messageBar().pushMessage(tr("Error"), tr("Could not save changes for layer '{0}'.").format(layer_name), level=1)
+    def _style_temporal_layer(self, layer):
+        """Applies a bivariate renderer and temporal configuration to the output layer."""
 
-            self.iface.messageBar().clearWidgets()
-            if processed_layers > 0:
-                self.iface.messageBar().pushMessage(tr("Info"), tr("Analysis complete for {0} layers.").format(processed_layers), level=0, duration=5)
-                self.iface.mapCanvas().refresh()
+        # --- 1. Create the renderer structure ---
+        # The root renderer is categorized by pipe_type
+        root_renderer = QgsCategorizedRenderer(attrName='pipe_type')
 
-            hotspot_layer = None
-            if self.dlg.useHotspotAnalysis():
-                hotspot_threshold = self.dlg.hotspotThreshold()
-                hotspot_radius = self.dlg.hotspotRadius()
-                hotspot_layer = self._run_hotspot_analysis(
-                    analysis_configs, hotspot_threshold, hotspot_radius
-                )
-                if hotspot_layer:
-                    QgsProject.instance().addMapLayer(hotspot_layer)
-                    self.iface.messageBar().pushMessage(
-                        tr("Success"), tr("Hotspot analysis complete."), level=0, duration=4)
+        # Define the categories and their corresponding color ramps
+        # Colors from https://colorbrewer2.org
+        categories = {
+            'water': {'label': 'Water', 'colors': ['#eff3ff', '#bdd7e7', '#6baed6', '#3182bd', '#08519c']},
+            'sewer/spill': {'label': 'Wastewater', 'colors': ['#fee5d9', '#fcae91', '#fb6a4a', '#de2d26', '#a50f15']},
+            'sewer/storm': {'label': 'Stormwater', 'colors': ['#e5f5e0', '#a1d99b', '#74c476', '#31a354', '#006d2c']}
+        }
 
-            if high_risk_results:
-                high_risk_results.sort(key=lambda x: x['renewal_need'], reverse=True)
-                hotspot_count = hotspot_layer.featureCount() if hotspot_layer else 0
-                self.results_dialog = ResultsDialog(parent=self.iface.mainWindow(), hotspot_count=hotspot_count)
-                self.results_dialog.zoom_to_feature_signal.connect(self._handle_zoom_to_feature)
-                self.results_dialog.populate_table(high_risk_results)
-                self.results_dialog.show()
+        # --- 2. Create a graduated renderer for each category ---
+        for pipe_type, style_info in categories.items():
+            graduated_renderer = QgsGraduatedRenderer(attrName='renewal_need')
+            graduated_renderer.setClassAttribute('renewal_need')
 
-            QgsMessageLog.logMessage(tr("reneW analysis finished."), 'reneW', Qgis.Success)
+            # Create a color ramp from the defined colors
+            color_ramp = QgsStyle.defaultStyle().colorRamp(style_info['colors'])
+
+            # Define ranges for the graduated symbology
+            # These are just examples; a more robust implementation might classify based on data range
+            ranges = [
+                QgsRendererRange(0.0, 0.2, 'Very Low', color_ramp.color(0.0)),
+                QgsRendererRange(0.2, 0.4, 'Low', color_ramp.color(0.25)),
+                QgsRendererRange(0.4, 0.6, 'Medium', color_ramp.color(0.5)),
+                QgsRendererRange(0.6, 0.8, 'High', color_ramp.color(0.75)),
+                QgsRendererRange(0.8, 1.0, 'Very High', color_ramp.color(1.0))
+            ]
+
+            # Add a glow effect to the symbol for the highest range
+            last_range_symbol = QgsSymbol.defaultSymbol(layer.geometryType())
+            last_range_symbol.setColor(ranges[-1].color())
+            glow_effect = QgsGlowSymbolLayer(color=QColor(255, 255, 0, 150), blurRadius=5)
+            last_range_symbol.appendSymbolLayer(glow_effect)
+            ranges[-1].setSymbol(last_range_symbol)
+
+            graduated_renderer.setRanges(ranges)
+            root_renderer.addCategory(pipe_type, graduated_renderer, style_info['label'])
+
+        layer.setRenderer(root_renderer)
+
+        # --- 3. Configure temporal properties ---
+        temporal_props = layer.temporalProperties()
+        temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeature)
+        temporal_props.setStartField("year")
+        temporal_props.setEndField("year")
+        temporal_props.setIsActive(True)
 
     def _run_hotspot_analysis(self, analysis_configs, threshold, distance):
         """

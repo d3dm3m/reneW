@@ -11,6 +11,7 @@
 *   Supports **filtering by municipality**.
 *   User-friendly dialog to select layers and map the necessary attributes.
 *   Adds the calculated score to a new field (`fornyelsebehov`) in your data.
+*   **Temporal Analysis:** Generates a time-aware layer to animate how renewal needs change over a user-defined period, fully integrated with the QGIS Temporal Controller.
 *   UI available in English and Swedish.
 
 ## Installation
@@ -31,6 +32,36 @@ You should now see the `reneW` icon in the QGIS toolbar.
     *   Map the required fields: **Material**, **Construction year**, and **Dimension**.
     *   Optionally, map fields for **Municipality**, **Renovation year**, and **Renovation method**.
 3.  **Run:** Click `OK`. A new field `fornyelsebehov` will be added to your layer(s). You can use this field to style the layer to visually identify high-risk pipes.
+
+## Temporal Analysis (Time-Slider Animation)
+
+Beyond calculating the renewal need for the current year, reneW includes a powerful temporal analysis feature to visualize how renewal needs evolve over time.
+
+When enabled, this feature generates a new, time-aware layer that is automatically styled and configured for use with the QGIS **Temporal Controller** (the time-slider).
+
+### How to Use It
+
+1.  In the main plugin dialog, find the **Temporal Analysis** group box.
+2.  Check the box to enable the feature.
+3.  Specify the time period for the analysis:
+    *   **Start Year:** The first year of the simulation.
+    *   **End Year:** The last year of the simulation.
+    *   **Step (Years):** The interval for calculations (e.g., a step of 5 will calculate the need for 2025, 2030, 2035, etc.).
+4.  Run the analysis as usual by clicking `OK`.
+
+### Understanding the Output
+
+A new memory layer named `Temporal Renewal Need` will be added to your project. This layer is styled to show two variables at once:
+
+*   **Pipe Type:** The color of the pipe indicates its type (Blue for water, Red for wastewater, Green for stormwater).
+*   **Renewal Need:** The intensity of the color indicates the renewal need. A pale, light color means a low need, while a bright, saturated color means a high need.
+*   **Critical Pipes:** The pipes with the highest need will have a yellow "glow" effect, making them easy to spot.
+
+### Animating the Map
+
+1.  Open the QGIS Temporal Controller by clicking the clock icon in the map navigation toolbar.
+2.  Click the "Animated Temporal Navigation" button (the one with the green play icon).
+3.  The map is now linked to the time slider. You can press play, or drag the slider, to see the renewal needs change across the map for each year in your specified range.
 
 ## The Calculation Model
 

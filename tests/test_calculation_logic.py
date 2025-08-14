@@ -5,18 +5,8 @@ import sys
 import os
 from unittest.mock import MagicMock
 
-# --- Mock QGIS modules for testing without a QGIS environment ---
-MOCK_MODULES = {
-    'qgis': MagicMock(),
-    'qgis.core': MagicMock(),
-    'qgis.gui': MagicMock(),
-    'qgis.PyQt': MagicMock(),
-    'qgis.PyQt.QtCore': MagicMock(),
-    'qgis.PyQt.QtWidgets': MagicMock(),
-    'qgis.PyQt.QtGui': MagicMock(),
-}
-sys.modules.update(MOCK_MODULES)
-# --- End of Mocking ---
+from tests.mock_utils import setup_qgis_mocks
+setup_qgis_mocks()
 
 # Add the parent directory to the Python path to allow sibling imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
