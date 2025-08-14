@@ -176,6 +176,8 @@ class ReneW:
                 # Add optional renovation fields
                 if config.get('reno_year_field'):
                     field_indices['reno_year_field'] = fields.indexFromName(config['reno_year_field'])
+                if config.get('reno_method_field'):
+                    field_indices['reno_method_field'] = fields.indexFromName(config['reno_method_field'])
 
                 muni_idx = fields.indexFromName(config['municipality_field']) if config.get('municipality_field') else -1
                 output_idx = fields.indexFromName(output_field_name)
@@ -200,24 +202,24 @@ class ReneW:
                         continue
 
                     effective_install_year = installation_year
+                    has_been_renovated = False
                     # --- Renovation Logic ---
-                    # Check if a renovation has occurred that resets the pipe's age
                     if 'reno_year_field' in field_indices:
                         reno_year_val = attrs[field_indices['reno_year_field']]
                         if reno_year_val:
                             try:
                                 renovation_year = int(reno_year_val)
-                                # A valid renovation must happen after installation
                                 if renovation_year > installation_year:
                                     effective_install_year = renovation_year
+                                    has_been_renovated = True
                             except (ValueError, TypeError):
                                 pass # Ignore non-integer renovation years
 
                     age = max(0, current_year - effective_install_year)
                     material_name = attrs[field_indices['material_field']]
 
+                    # Default to original material properties
                     try:
-                        # Material properties are based on the original installation year
                         key, params = material_lookup.find_material_key(
                             params_data,
                             domain=domain,
@@ -229,7 +231,20 @@ class ReneW:
                         QgsMessageLog.logMessage(f"Material lookup failed for '{material_name}': {e}", 'reneW', Qgis.Warning)
                         continue
 
-                    # The new calculation logic is based on cohorts and periods.
+                    # If renovated, check if the method implies new material properties (lining)
+                    if has_been_renovated and 'reno_method_field' in field_indices:
+                        reno_method_val = attrs[field_indices['reno_method_field']]
+                        if isinstance(reno_method_val, str) and reno_method_val.strip():
+                            liner_result = material_lookup.find_liner_key(
+                                params_data,
+                                domain=domain,
+                                subtype=subtype,
+                                method_name=reno_method_val
+                            )
+                            if liner_result:
+                                key, params = liner_result # Override with liner params
+                                material_name = f"{material_name} (Lined: {reno_method_val})"
+
                     # The cohort's age is determined by the effective_install_year (post-renovation).
                     cohort = calculation_logic.Cohort(length_km=1.0, install_year=effective_install_year, material_key=key)
 
