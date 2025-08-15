@@ -443,17 +443,14 @@ class ReneW:
             graduated_renderer = QgsGraduatedSymbolRenderer(attrName='renewal_need')
             graduated_renderer.setClassAttribute('renewal_need')
 
-            # Create a color ramp from the defined colors
-            color_ramp = QgsStyle.defaultStyle().colorRamp(style_info['colors'])
-
             # Define ranges for the graduated symbology
             # These are just examples; a more robust implementation might classify based on data range
             ranges = [
-                QgsRendererRange(0.0, 0.2, 'Very Low', color_ramp.color(0.0)),
-                QgsRendererRange(0.2, 0.4, 'Low', color_ramp.color(0.25)),
-                QgsRendererRange(0.4, 0.6, 'Medium', color_ramp.color(0.5)),
-                QgsRendererRange(0.6, 0.8, 'High', color_ramp.color(0.75)),
-                QgsRendererRange(0.8, 1.0, 'Very High', color_ramp.color(1.0))
+                QgsRendererRange(0.0, 0.2, 'Very Low', QColor(style_info['colors'][0])),
+                QgsRendererRange(0.2, 0.4, 'Low', QColor(style_info['colors'][1])),
+                QgsRendererRange(0.4, 0.6, 'Medium', QColor(style_info['colors'][2])),
+                QgsRendererRange(0.6, 0.8, 'High', QColor(style_info['colors'][3])),
+                QgsRendererRange(0.8, 1.0, 'Very High', QColor(style_info['colors'][4]))
             ]
 
             # Add a glow effect to the symbol for the highest range
