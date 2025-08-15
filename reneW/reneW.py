@@ -23,18 +23,33 @@ from qgis.core import (
     Qgis
 )
 
-# --- Symbology & Rendering Modules ---
-from qgis.symbology import (
-    QgsSymbol,
-    QgsFillSymbol,
-    QgsSimpleFillSymbolLayer,
-    QgsGlowSymbolLayer,
-    QgsCategorizedSymbolRenderer,
-    QgsGraduatedSymbolRenderer,
-    QgsRendererRange,
-    QgsStyle,
-    QgsBlurEffect  # Effects are also part of symbology
-)
+# --- Symbology & Rendering Modules (with backward compatibility) ---
+try:
+    # QGIS 3.8+ style
+    from qgis.symbology import (
+        QgsSymbol,
+        QgsFillSymbol,
+        QgsSimpleFillSymbolLayer,
+        QgsGlowSymbolLayer,
+        QgsCategorizedSymbolRenderer,
+        QgsGraduatedSymbolRenderer,
+        QgsRendererRange,
+        QgsStyle
+    )
+except (ModuleNotFoundError, ImportError):
+    # Fallback for older QGIS versions (e.g., 3.4) where these were in core
+    from qgis.core import (
+        QgsSymbol,
+        QgsFillSymbol,
+        QgsSimpleFillSymbolLayer,
+        QgsGlowSymbolLayer,
+        QgsCategorizedSymbolRenderer,
+        QgsGraduatedSymbolRenderer,
+        QgsRendererRange,
+        QgsStyle
+    )
+
+# Note: QgsBlurEffect was removed from imports as it was unused and not available in QGIS < 3.6
 from qgis.processing import QgsProcessingAlgorithm, QgsProcessingFeedback
 
 # Import the code for the dialog and the calculation logic
