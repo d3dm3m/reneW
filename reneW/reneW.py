@@ -131,7 +131,7 @@ class ReneW:
             self.iface.messageBar().pushMessage(
                 tr("Error"),
                 tr("Failed to load or parse parameters.json: {0}").format(e),
-                level=2, duration=10)
+                Qgis.Critical, duration=10)
             return
 
         if self.dlg is None:
@@ -152,7 +152,7 @@ class ReneW:
         """Performs the standard, single-year renewal need analysis."""
         analysis_configs = self.dlg.get_analysis_configs()
         if not analysis_configs:
-            self.iface.messageBar().pushMessage(tr("Info"), tr("No layers selected for analysis."), level=0, duration=3)
+            self.iface.messageBar().pushMessage(tr("Info"), tr("No layers selected for analysis."), Qgis.Info, duration=3)
             return
 
         QgsMessageLog.logMessage(tr("Starting reneW standard analysis."), 'reneW', Qgis.Info)
@@ -192,7 +192,7 @@ class ReneW:
 
             required_fields = ['material_field', 'year_field', 'dimension_field']
             if not all(config.get(f) for f in required_fields):
-                self.iface.messageBar().pushMessage(tr("Error"), tr("A required field is not selected for layer '{0}'. Skipping.").format(layer_name), level=1)
+                self.iface.messageBar().pushMessage(tr("Error"), tr("A required field is not selected for layer '{0}'. Skipping.").format(layer_name), Qgis.Warning)
                 continue
 
             field_indices = {f: fields.indexFromName(config[f]) for f in required_fields if config.get(f)}
@@ -276,15 +276,15 @@ class ReneW:
                     high_risk_results.append({'layer_name': layer_name, 'layer_id': layer.id(), 'feature_id': feature.id(), 'material': material_name, 'age': age, 'renewal_need': renewal_need})
 
             if layer.commitChanges():
-                self.iface.messageBar().pushMessage(tr("Success"), tr("Calculation complete for layer '{0}'.").format(layer_name), level=0, duration=4)
+                self.iface.messageBar().pushMessage(tr("Success"), tr("Calculation complete for layer '{0}'.").format(layer_name), Qgis.Info, duration=4)
                 processed_layers += 1
             else:
                 layer.rollBack()
-                self.iface.messageBar().pushMessage(tr("Error"), tr("Could not save changes for layer '{0}'.").format(layer_name), level=1)
+                self.iface.messageBar().pushMessage(tr("Error"), tr("Could not save changes for layer '{0}'.").format(layer_name), Qgis.Warning)
 
         self.iface.messageBar().clearWidgets()
         if processed_layers > 0:
-            self.iface.messageBar().pushMessage(tr("Info"), tr("Analysis complete for {0} layers.").format(processed_layers), level=0, duration=5)
+            self.iface.messageBar().pushMessage(tr("Info"), tr("Analysis complete for {0} layers.").format(processed_layers), Qgis.Info, duration=5)
             self.iface.mapCanvas().refresh()
 
         hotspot_layer = None
@@ -294,7 +294,7 @@ class ReneW:
             hotspot_layer = self._run_hotspot_analysis(analysis_configs, hotspot_threshold, hotspot_radius)
             if hotspot_layer:
                 QgsProject.instance().addMapLayer(hotspot_layer)
-                self.iface.messageBar().pushMessage(tr("Success"), tr("Hotspot analysis complete."), level=0, duration=4)
+                self.iface.messageBar().pushMessage(tr("Success"), tr("Hotspot analysis complete."), Qgis.Info, duration=4)
 
         if high_risk_results:
             high_risk_results.sort(key=lambda x: x['renewal_need'], reverse=True)
@@ -310,7 +310,7 @@ class ReneW:
         """Performs the time-series analysis and creates a new time-aware layer."""
         analysis_configs = self.dlg.get_analysis_configs()
         if not analysis_configs:
-            self.iface.messageBar().pushMessage(tr("Info"), tr("No layers selected for analysis."), level=0, duration=3)
+            self.iface.messageBar().pushMessage(tr("Info"), tr("No layers selected for analysis."), Qgis.Info, duration=3)
             return
 
         QgsMessageLog.logMessage(tr("Starting reneW temporal analysis."), 'reneW', Qgis.Info)
@@ -419,7 +419,7 @@ class ReneW:
 
         self._style_temporal_layer(temporal_layer)
         QgsProject.instance().addMapLayer(temporal_layer)
-        self.iface.messageBar().pushMessage(tr("Success"), tr("Temporal analysis layer created."), level=0, duration=5)
+        self.iface.messageBar().pushMessage(tr("Success"), tr("Temporal analysis layer created."), Qgis.Info, duration=5)
 
         QgsMessageLog.logMessage(tr("reneW temporal analysis finished."), 'reneW', Qgis.Success)
 
@@ -503,7 +503,7 @@ class ReneW:
                 high_risk_layers.append(temp_layer)
 
         if not high_risk_layers:
-            self.iface.messageBar().pushMessage(tr("Info"), tr("No features found above the risk threshold for hotspot analysis."), level=0)
+            self.iface.messageBar().pushMessage(tr("Info"), tr("No features found above the risk threshold for hotspot analysis."), Qgis.Info)
             return None
 
         # Step 2: Merge high-risk feature layers into one
