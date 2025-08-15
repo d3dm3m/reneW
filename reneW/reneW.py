@@ -458,8 +458,8 @@ class ReneW:
                 symbol = QgsSymbol.defaultSymbol(layer.geometryType())
                 symbol.setColor(QColor(color_hex))
                 # The constructor for QgsRendererRange was changed in a recent QGIS API update.
-                # The symbol must now be passed in the constructor.
-                range_obj = QgsRendererRange(lower, upper, symbol, label)
+                # Explicitly naming the arguments to avoid ambiguity.
+                range_obj = QgsRendererRange(lowerValue=lower, upperValue=upper, symbol=symbol, label=label)
                 ranges.append(range_obj)
 
             graduated_renderer.setRanges(ranges)
