@@ -445,18 +445,21 @@ class ReneW:
 
             # Define ranges for the graduated symbology
             # These are just examples; a more robust implementation might classify based on data range
-            ranges = [
-                QgsRendererRange(0.0, 0.2, 'Very Low', QColor(style_info['colors'][0])),
-                QgsRendererRange(0.2, 0.4, 'Low', QColor(style_info['colors'][1])),
-                QgsRendererRange(0.4, 0.6, 'Medium', QColor(style_info['colors'][2])),
-                QgsRendererRange(0.6, 0.8, 'High', QColor(style_info['colors'][3])),
-                QgsRendererRange(0.8, 1.0, 'Very High', QColor(style_info['colors'][4]))
+            range_data = [
+                (0.0, 0.2, 'Very Low', style_info['colors'][0]),
+                (0.2, 0.4, 'Low', style_info['colors'][1]),
+                (0.4, 0.6, 'Medium', style_info['colors'][2]),
+                (0.6, 0.8, 'High', style_info['colors'][3]),
+                (0.8, 1.0, 'Very High', style_info['colors'][4])
             ]
 
-            # Add a glow effect to the symbol for the highest range
-            last_range_symbol = QgsSymbol.defaultSymbol(layer.geometryType())
-            last_range_symbol.setColor(ranges[-1].color())
-            ranges[-1].setSymbol(last_range_symbol)
+            ranges = []
+            for lower, upper, label, color_hex in range_data:
+                symbol = QgsSymbol.defaultSymbol(layer.geometryType())
+                symbol.setColor(QColor(color_hex))
+                range_obj = QgsRendererRange(lower, upper, label)
+                range_obj.setSymbol(symbol)
+                ranges.append(range_obj)
 
             graduated_renderer.setRanges(ranges)
             root_renderer.addCategory(pipe_type, graduated_renderer, style_info['label'])
