@@ -4,7 +4,7 @@ from datetime import datetime
 
 from qgis.PyQt.QtWidgets import QAction, QProgressBar
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtCore import QCoreApplication, Qt
+from qgis.PyQt.QtCore import QCoreApplication, Qt, QVariant
 from qgis.PyQt.QtGui import QColor
 # --- Core QGIS Modules ---
 from qgis.core import (
@@ -187,7 +187,7 @@ class ReneW:
             fields = provider.fields()
 
             if fields.indexFromName(output_field_name) == -1:
-                provider.addAttributes([QgsField(output_field_name, 'double')])
+                provider.addAttributes([QgsField(output_field_name, QVariant.Double)])
                 layer.updateFields()
 
             required_fields = ['material_field', 'year_field', 'dimension_field']
@@ -321,11 +321,11 @@ class ReneW:
 
         # Define fields for the new layer
         fields = QgsFields()
-        fields.append(QgsField("pipe_id", 'String'))
-        fields.append(QgsField("source_layer", 'String'))
-        fields.append(QgsField("year", 'int'))
-        fields.append(QgsField("pipe_type", 'String'))
-        fields.append(QgsField("renewal_need", 'double'))
+        fields.append(QgsField("pipe_id", QVariant.String))
+        fields.append(QgsField("source_layer", QVariant.String))
+        fields.append(QgsField("year", QVariant.Int))
+        fields.append(QgsField("pipe_type", QVariant.String))
+        fields.append(QgsField("renewal_need", QVariant.Double))
 
         # Create the memory layer
         temporal_layer = QgsVectorLayer(f"LineString?crs={QgsProject.instance().crs().authid()}", "Temporal Renewal Need", "memory")
