@@ -15,6 +15,7 @@ from qgis.core import (
     QgsFeature,
     QgsFeatureRequest,
     QgsProcessing,
+    QgsProcessingFeedback,
     QgsVectorLayerTemporalProperties,
     QgsMessageLog,
     Qgis,
@@ -25,9 +26,6 @@ from qgis.core import (
     QgsRendererRange,
     QgsStyle
 )
-
-# Note: QgsBlurEffect was removed from imports as it was unused and not available in QGIS < 3.6
-from qgis.processing import QgsProcessingFeedback
 
 # Import the code for the dialog and the calculation logic
 from .reneW_dialog import ReneWDialog
