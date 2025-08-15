@@ -10,10 +10,8 @@ from qgis.core import (
     QgsProject, QgsVectorLayer, QgsField, QgsGeometry, QgsFeature,
     QgsFillSymbol, QgsSimpleFillSymbolLayer, QgsMessageLog, Qgis, QgsBlurEffect,
     QgsFields, QgsFeatureSink, QgsFeatureRequest, QgsProcessing, QgsWkbTypes,
-    QgsVectorLayerTemporalProperties)
-from qgis.gui import (
-    QgsCategorizedRenderer, QgsGraduatedRenderer, QgsRendererRange, QgsSymbol,
-    QgsStyle, QgsGlowSymbolLayer)
+    QgsCategorizedSymbolRenderer, QgsGraduatedSymbolRenderer, QgsRendererRange, QgsSymbol,
+    QgsStyle, QgsGlowSymbolLayer, QgsVectorLayerTemporalProperties)
 from qgis.processing import QgsProcessingAlgorithm, QgsProcessingFeedback
 
 # Import the code for the dialog and the calculation logic
@@ -406,7 +404,7 @@ class ReneW:
 
         # --- 1. Create the renderer structure ---
         # The root renderer is categorized by pipe_type
-        root_renderer = QgsCategorizedRenderer(attrName='pipe_type')
+        root_renderer = QgsCategorizedSymbolRenderer(attrName='pipe_type')
 
         # Define the categories and their corresponding color ramps
         # Colors from https://colorbrewer2.org
@@ -418,7 +416,7 @@ class ReneW:
 
         # --- 2. Create a graduated renderer for each category ---
         for pipe_type, style_info in categories.items():
-            graduated_renderer = QgsGraduatedRenderer(attrName='renewal_need')
+            graduated_renderer = QgsGraduatedSymbolRenderer(attrName='renewal_need')
             graduated_renderer.setClassAttribute('renewal_need')
 
             # Create a color ramp from the defined colors
