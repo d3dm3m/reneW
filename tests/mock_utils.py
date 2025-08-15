@@ -13,6 +13,7 @@ def setup_qgis_mocks():
     # Create mocks for the submodules
     qgis_core_mock = MagicMock()
     qgis_gui_mock = MagicMock()
+    qgis_symbology_mock = MagicMock()
     qgis_analysis_mock = MagicMock()
     qgis_processing_mock = MagicMock()
     pyqt_mock = MagicMock()
@@ -24,6 +25,7 @@ def setup_qgis_mocks():
     sys.modules['qgis'] = qgis_mock
     sys.modules['qgis.core'] = qgis_core_mock
     sys.modules['qgis.gui'] = qgis_gui_mock
+    sys.modules['qgis.symbology'] = qgis_symbology_mock
     sys.modules['qgis.analysis'] = qgis_analysis_mock
     sys.modules['qgis.processing'] = qgis_processing_mock
     sys.modules['qgis.PyQt'] = pyqt_mock

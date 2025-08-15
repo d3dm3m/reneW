@@ -6,12 +6,35 @@ from qgis.PyQt.QtWidgets import QAction, QProgressBar
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtCore import QVariant, QCoreApplication, Qt
 from qgis.PyQt.QtGui import QColor
+# --- Core QGIS Modules ---
 from qgis.core import (
-    QgsProject, QgsVectorLayer, QgsField, QgsGeometry, QgsFeature,
-    QgsFillSymbol, QgsSimpleFillSymbolLayer, QgsMessageLog, Qgis, QgsBlurEffect,
-    QgsFields, QgsFeatureSink, QgsFeatureRequest, QgsProcessing, QgsWkbTypes,
-    QgsCategorizedSymbolRenderer, QgsGraduatedSymbolRenderer, QgsRendererRange, QgsSymbol,
-    QgsStyle, QgsGlowSymbolLayer, QgsVectorLayerTemporalProperties)
+    QgsProject,
+    QgsVectorLayer,
+    QgsField,
+    QgsFields,
+    QgsGeometry,
+    QgsFeature,
+    QgsFeatureSink,
+    QgsFeatureRequest,
+    QgsProcessing,
+    QgsWkbTypes,
+    QgsVectorLayerTemporalProperties,
+    QgsMessageLog,
+    Qgis
+)
+
+# --- Symbology & Rendering Modules ---
+from qgis.symbology import (
+    QgsSymbol,
+    QgsFillSymbol,
+    QgsSimpleFillSymbolLayer,
+    QgsGlowSymbolLayer,
+    QgsCategorizedSymbolRenderer,
+    QgsGraduatedSymbolRenderer,
+    QgsRendererRange,
+    QgsStyle,
+    QgsBlurEffect  # Effects are also part of symbology
+)
 from qgis.processing import QgsProcessingAlgorithm, QgsProcessingFeedback
 
 # Import the code for the dialog and the calculation logic
