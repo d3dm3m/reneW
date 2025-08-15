@@ -141,7 +141,7 @@ class ReneWDialog(QDialog, FORM_CLASS):
     def _open_parameter_editor(self):
         """Opens the parameter editor dialog."""
         editor_dialog = ParameterEditorDialog(self)
-        editor_dialog.exec_()
+        editor_dialog.exec()
         self._create_dynamic_tabs()
         self._populate_municipality_filter()
         self._validate_inputs()

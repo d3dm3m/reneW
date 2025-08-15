@@ -139,7 +139,7 @@ class ReneW:
 
         self.dlg.load_settings()
         self.dlg.show()
-        result = self.dlg.exec_()
+        result = self.dlg.exec()
 
         if result:
             self.dlg.save_settings()
