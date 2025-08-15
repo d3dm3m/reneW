@@ -194,7 +194,7 @@ class ReneWDialog(QDialog, FORM_CLASS):
         return configs
 
     def _validate_inputs(self):
-        ok_button = self.mButtonBox.button(QDialogButtonBox.Ok)
+        ok_button = self.mButtonBox.button(QDialogButtonBox.StandardButton.Ok)
         if not ok_button: return
         error_messages = []
         is_at_least_one_tab_active = False
