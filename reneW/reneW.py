@@ -164,7 +164,7 @@ class ReneW:
         total_features = sum(config['layer'].featureCount() for config in analysis_configs)
         progress_bar = QProgressBar()
         progress_bar.setMaximum(total_features)
-        progress_bar.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        progress_bar.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         message_bar_item = self.iface.messageBar().createMessage(tr("Calculating renewal need..."))
         message_bar_item.layout().addWidget(progress_bar)
         self.iface.messageBar().pushWidget(message_bar_item, Qgis.Info)
@@ -340,7 +340,7 @@ class ReneW:
 
         progress_bar = QProgressBar()
         progress_bar.setMaximum(total_calcs)
-        progress_bar.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        progress_bar.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         message_bar_item = self.iface.messageBar().createMessage(tr("Calculating temporal renewal need..."))
         message_bar_item.layout().addWidget(progress_bar)
         self.iface.messageBar().pushWidget(message_bar_item, Qgis.Info)
