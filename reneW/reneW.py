@@ -10,8 +10,10 @@ from qgis.core import (
     QgsProject, QgsVectorLayer, QgsField, QgsGeometry, QgsFeature,
     QgsFillSymbol, QgsSimpleFillSymbolLayer, QgsMessageLog, Qgis, QgsBlurEffect,
     QgsFields, QgsFeatureSink, QgsFeatureRequest, QgsProcessing, QgsWkbTypes,
+    QgsVectorLayerTemporalProperties)
+from qgis.gui import (
     QgsCategorizedRenderer, QgsGraduatedRenderer, QgsRendererRange, QgsSymbol,
-    QgsStyle, QgsGlowSymbolLayer, QgsVectorLayerTemporalProperties)
+    QgsStyle, QgsGlowSymbolLayer)
 from qgis.processing import QgsProcessingAlgorithm, QgsProcessingFeedback
 
 # Import the code for the dialog and the calculation logic
