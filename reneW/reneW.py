@@ -24,6 +24,7 @@ from qgis.core import (
     QgsCategorizedSymbolRenderer,
     QgsGraduatedSymbolRenderer,
     QgsRendererRange,
+    QgsRuleBasedRenderer,
     QgsStyle
 )
 
@@ -424,52 +425,59 @@ class ReneW:
         QgsMessageLog.logMessage(tr("reneW temporal analysis finished."), 'reneW', Qgis.Success)
 
     def _style_temporal_layer(self, layer):
-        """Applies a bivariate renderer and temporal configuration to the output layer."""
+        """Applies a rule-based bivariate renderer and temporal configuration to the output layer."""
 
-        # --- 1. Create the renderer structure ---
-        # The root renderer is categorized by pipe_type
-        root_renderer = QgsCategorizedSymbolRenderer(attrName='pipe_type')
+        # --- 1. Create the root renderer ---
+        # Handle QGIS API changes for backwards compatibility.
+        try:
+            # QGIS 3.99+ API: Renderers may be created with a static .create() method.
+            root_rule = QgsRuleBasedRenderer.Rule(QgsSymbol())
+            renderer = QgsRuleBasedRenderer.create(root_rule)
+        except (TypeError, AttributeError):
+            # Fallback for older QGIS versions
+            renderer = QgsRuleBasedRenderer()
+            root_rule = renderer.rootRule()
 
-        # Define the categories and their corresponding color ramps
-        # Colors from https://colorbrewer2.org
+        # Define categories and color ramps from ColorBrewer
         categories = {
             'water': {'label': 'Water', 'colors': ['#eff3ff', '#bdd7e7', '#6baed6', '#3182bd', '#08519c']},
             'sewer/spill': {'label': 'Wastewater', 'colors': ['#fee5d9', '#fcae91', '#fb6a4a', '#de2d26', '#a50f15']},
             'sewer/storm': {'label': 'Stormwater', 'colors': ['#e5f5e0', '#a1d99b', '#74c476', '#31a354', '#006d2c']}
         }
 
-        # --- 2. Create a graduated renderer for each category ---
+        # Define graduated ranges and labels
+        range_data = [
+            (0.0, 0.2, 'Very Low Need (0.0 - 0.2)'),
+            (0.2, 0.4, 'Low Need (0.2 - 0.4)'),
+            (0.4, 0.6, 'Medium Need (0.4 - 0.6)'),
+            (0.6, 0.8, 'High Need (0.6 - 0.8)'),
+            (0.8, 1.01, 'Very High Need (0.8 - 1.0)')
+        ]
+
+        # --- 2. Build the rule structure ---
+        # Clear any existing rules from the root to ensure a clean slate
+        root_rule.deleteChildren()
+
         for pipe_type, style_info in categories.items():
-            graduated_renderer = QgsGraduatedSymbolRenderer(attrName='renewal_need')
-            graduated_renderer.setClassAttribute('renewal_need')
+            parent_rule = root_rule.clone()
+            parent_rule.setLabel(style_info['label'])
+            parent_rule.setSymbol(None)
 
-            # Define ranges for the graduated symbology
-            # These are just examples; a more robust implementation might classify based on data range
-            range_data = [
-                (0.0, 0.2, 'Very Low', style_info['colors'][0]),
-                (0.2, 0.4, 'Low', style_info['colors'][1]),
-                (0.4, 0.6, 'Medium', style_info['colors'][2]),
-                (0.6, 0.8, 'High', style_info['colors'][3]),
-                (0.8, 1.0, 'Very High', style_info['colors'][4])
-            ]
+            for i, (lower, upper, label) in enumerate(range_data):
+                expression = f"\"pipe_type\" = '{pipe_type}' AND \"renewal_need\" >= {lower} AND \"renewal_need\" < {upper}"
 
-            ranges = []
-            for lower, upper, label, color_hex in range_data:
                 symbol = QgsSymbol.defaultSymbol(layer.geometryType())
-                symbol.setColor(QColor(color_hex))
-                # The constructor for QgsRendererRange appears to be unreliable in some QGIS versions.
-                # Create the object and then set its properties individually for robustness.
-                range_obj = QgsRendererRange()
-                range_obj.setLowerValue(lower)
-                range_obj.setUpperValue(upper)
-                range_obj.setSymbol(symbol)
-                range_obj.setLabel(label)
-                ranges.append(range_obj)
+                if symbol:
+                    symbol.setColor(QColor(style_info['colors'][i]))
+                    symbol.setWidth(0.5)
 
-            graduated_renderer.setRanges(ranges)
-            root_renderer.addCategory(pipe_type, graduated_renderer, style_info['label'])
+                child_rule = QgsRuleBasedRenderer.Rule(symbol, filterExp=expression, label=label)
+                parent_rule.appendChild(child_rule)
 
-        layer.setRenderer(root_renderer)
+            root_rule.appendChild(parent_rule)
+
+        # Apply the new renderer to the layer
+        layer.setRenderer(renderer)
 
         # --- 3. Configure temporal properties ---
         temporal_props = layer.temporalProperties()
