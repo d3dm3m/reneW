@@ -90,25 +90,28 @@ The plugin's calculations are controlled by `parameters.json`, located in the pl
 
 ### `parameters.json` Structure
 
-The file contains a nested dictionary structure for the different pipe domains.
+The file contains a nested dictionary structure where material parameters (`mu` and `sigma`) are defined for each pipe domain.
 
 ```json
 {
   "metadata": { ... },
   "municipalities": [ ... ],
   "water": {
-    "grajarn_<1950": { "mu": 85, "sigma": 25 },
-    "segjarn_>=1980": { "mu": 135, "sigma": 28 },
-    "ovrigt": { "mu": 100, "sigma": 40 }
+    "grajarn": { "mu": 60.0, "sigma": 5.0 },
+    "segjarn": { "mu": 95.0, "sigma": 5.0 },
+    "pvc": { "mu": 70.0, "sigma": 5.0 },
+    "ovrigt": { "mu": 50.0, "sigma": 25.0 }
   },
   "sewer": {
     "spill": {
-      "betong_<1950": { "mu": 80, "sigma": 20 },
-      "ovrigt": { "mu": 90, "sigma": 35 }
+      "grajarn": { "mu": 70.0, "sigma": 5.0 },
+      "betong": { "mu": 92.5, "sigma": 6.25 },
+      "ovrigt": { "mu": 50.0, "sigma": 25.0 }
     },
     "storm": {
-      "betong_<1950": { "mu": 100, "sigma": 30 },
-      "ovrigt": { "mu": 100, "sigma": 40 }
+      "grajarn": { "mu": 75.0, "sigma": 5.0 },
+      "betong": { "mu": 97.5, "sigma": 6.25 },
+      "ovrigt": { "mu": 50.0, "sigma": 25.0 }
     }
   }
 }
@@ -116,15 +119,15 @@ The file contains a nested dictionary structure for the different pipe domains.
 
 *   The main keys are `water` and `sewer`. `sewer` is further divided into `spill` and `storm`.
 *   Inside each section is a dictionary of material parameter sets.
-*   The **keys** of this dictionary (e.g., `"grajarn_<1950"`) are internal identifiers used by the plugin.
-*   The **values** are objects containing the `"mu"` and `"sigma"` for that material class.
+*   The **keys** of this dictionary (e.g., `"grajarn"`) are internal identifiers used by the plugin.
+*   The **values** are objects containing the `"mu"` (mean lifetime) and `"sigma"` (standard deviation) for that material class.
 
 ### How Material Matching Works
 
 You do not need to have material names in your data that exactly match the keys in `parameters.json`. The plugin uses a flexible matching system (`reneW/material_lookup.py`) to map your data to the correct parameters.
 
-1.  **Alias Matching:** The system first normalizes your material string (e.g., "Segjärnsrör") and compares it against a vocabulary of common synonyms. For example, "segjärn", "ductile iron", and "dci" all map to the internal base key `segjarn`.
-2.  **Year-based Selection:** For materials that have different properties depending on age (e.g., PVC before and after 1970), the system uses the pipe's construction year to select the correct parameter key (e.g., `pvc_<1970` or `pvc_>=1970`).
-3.  **Fallback:** If no specific material is matched, the system uses the parameters defined for the `ovrigt` (other/unknown) key for that pipe domain.
+The system first normalizes your material string (e.g., "Segjärnsrör" becomes "segjarn") and compares it against a comprehensive vocabulary of common synonyms and abbreviations. This allows for a wide range of input data to be correctly identified.
+
+If a specific material from your data is not found in the vocabulary, the system will use the parameters defined for the `ovrigt` (other/unknown) key for that pipe domain.
 
 To customize the logic, you can either edit the `mu` and `sigma` values in the **Parameter Editor** or directly in the `parameters.json` file.

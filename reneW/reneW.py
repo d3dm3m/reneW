@@ -237,7 +237,7 @@ class ReneW:
                 age = max(0, current_year - effective_install_year)
                 material_name = attrs[field_indices['material_field']]
                 try:
-                    key, params = material_lookup.find_material_key(params_data, domain=domain, subtype=subtype, material_name=str(material_name), year=installation_year)
+                    key, params = material_lookup.find_material_key(params_data, domain=domain, subtype=subtype, material_name=str(material_name))
                 except KeyError as e:
                     QgsMessageLog.logMessage(f"Material lookup failed for '{material_name}': {e}", 'reneW', Qgis.Warning)
                     continue
@@ -390,7 +390,7 @@ class ReneW:
 
                 material_name = str(attrs[field_indices['material_field']])
                 try:
-                    key, params = material_lookup.find_material_key(params_data, domain=domain, subtype=subtype, material_name=material_name, year=installation_year)
+                    key, params = material_lookup.find_material_key(params_data, domain=domain, subtype=subtype, material_name=material_name)
                 except KeyError as e:
                     QgsMessageLog.logMessage(f"Material lookup failed for '{material_name}': {e}", 'reneW', Qgis.Warning)
                     continue
@@ -457,8 +457,9 @@ class ReneW:
             for lower, upper, label, color_hex in range_data:
                 symbol = QgsSymbol.defaultSymbol(layer.geometryType())
                 symbol.setColor(QColor(color_hex))
-                range_obj = QgsRendererRange(lower, upper, label)
-                range_obj.setSymbol(symbol)
+                # The constructor for QgsRendererRange was changed in a recent QGIS API update.
+                # The symbol must now be passed in the constructor.
+                range_obj = QgsRendererRange(lower, upper, symbol, label)
                 ranges.append(range_obj)
 
             graduated_renderer.setRanges(ranges)

@@ -116,8 +116,7 @@ def find_material_key(
     *,
     domain: str,                # 'water' or 'sewer'
     subtype: Optional[str],     # for sewer: 'spill' or 'storm'
-    material_name: str,
-    year: Optional[int]         # Year is no longer used for splitting, but kept for future use
+    material_name: str
 ) -> Tuple[str, MaterialParams]:
 
     dom = _norm(domain)
