@@ -4,6 +4,19 @@
     "author": "Jules",
     "description": "Comprehensive material parameters with a normalized structure. Common values are in 'material_defaults' and can be overridden in domain-specific sections."
   },
+  "renovation_method_mapping": {
+    "0": "Odefinierat",
+    "1": "Strumpinfodring",
+    "2": "Relining",
+    "3": "Strumpinfodring (Glasfiber_Hartz)",
+    "4": "Strumpinfodring (polyesterfiber_Hartz)",
+    "5": "Strumpinfodring (PVC_PE)",
+    "6": "Strumpinfodring (Polyuretan)",
+    "7": "Rörspräckning",
+    "8": "Flexibelt foder",
+    "9": "Formpassade rör",
+    "10": "Sliplining"
+  },
   "municipalities": [],
   "material_defaults": {
     "bly": { "mu": 85.0, "sigma": 7.5 },

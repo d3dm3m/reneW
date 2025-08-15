@@ -244,11 +244,22 @@ class ReneW:
 
                 if has_been_renovated and 'reno_method_field' in field_indices:
                     reno_method_val = attrs[field_indices['reno_method_field']]
-                    if isinstance(reno_method_val, str) and reno_method_val.strip():
-                        liner_result = material_lookup.find_liner_key(params_data, domain=domain, subtype=subtype, method_name=reno_method_val)
+
+                    # Handle both numeric codes and string values for renovation method
+                    reno_method_str = ''
+                    if isinstance(reno_method_val, (int, float)):
+                        # It's a numeric code, try to look it up
+                        mapping = params_data.get('renovation_method_mapping', {})
+                        reno_method_str = mapping.get(str(int(reno_method_val)))
+                    elif isinstance(reno_method_val, str):
+                        # It's already a string
+                        reno_method_str = reno_method_val
+
+                    if reno_method_str and reno_method_str.strip():
+                        liner_result = material_lookup.find_liner_key(params_data, domain=domain, subtype=subtype, method_name=reno_method_str)
                         if liner_result:
                             key, params = liner_result
-                            material_name = f"{material_name} (Lined: {reno_method_val})"
+                            material_name = f"{material_name} (Lined: {reno_method_str})"
 
                 cohort = calculation_logic.Cohort(length_km=1.0, install_year=effective_install_year, material_key=key)
                 renewal_need = calculation_logic.renewal_for_cohort_period(cohort, current_year, current_year + 1, params)
