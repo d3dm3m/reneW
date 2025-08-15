@@ -24,30 +24,41 @@ from qgis.core import (
 )
 
 # --- Symbology & Rendering Modules (with backward compatibility) ---
+
+# Most symbology classes are in qgis.symbology (3.8+) or qgis.core (older)
 try:
-    # QGIS 3.8+ style
     from qgis.symbology import (
         QgsSymbol,
         QgsFillSymbol,
         QgsSimpleFillSymbolLayer,
-        QgsGlowSymbolLayer,
         QgsCategorizedSymbolRenderer,
         QgsGraduatedSymbolRenderer,
         QgsRendererRange,
         QgsStyle
     )
 except (ModuleNotFoundError, ImportError):
-    # Fallback for older QGIS versions (e.g., 3.4) where these were in core
     from qgis.core import (
         QgsSymbol,
         QgsFillSymbol,
         QgsSimpleFillSymbolLayer,
-        QgsGlowSymbolLayer,
         QgsCategorizedSymbolRenderer,
         QgsGraduatedSymbolRenderer,
         QgsRendererRange,
         QgsStyle
     )
+
+# QgsGlowSymbolLayer has a more complex history: symbology vs gui
+QgsGlowSymbolLayer = None
+try:
+    # Available in qgis.symbology in 3.0+
+    from qgis.symbology import QgsGlowSymbolLayer
+except (ModuleNotFoundError, ImportError):
+    try:
+        # Fallback for very old versions where it might have been in gui
+        from qgis.gui import QgsGlowSymbolLayer
+    except (ModuleNotFoundError, ImportError):
+        # If it's not found, the variable remains None and is handled gracefully later
+        pass
 
 # Note: QgsBlurEffect was removed from imports as it was unused and not available in QGIS < 3.6
 from qgis.processing import QgsProcessingAlgorithm, QgsProcessingFeedback
@@ -473,8 +484,10 @@ class ReneW:
             # Add a glow effect to the symbol for the highest range
             last_range_symbol = QgsSymbol.defaultSymbol(layer.geometryType())
             last_range_symbol.setColor(ranges[-1].color())
-            glow_effect = QgsGlowSymbolLayer(color=QColor(255, 255, 0, 150), blurRadius=5)
-            last_range_symbol.appendSymbolLayer(glow_effect)
+            # Conditionally add the glow effect if the class was imported successfully
+            if QgsGlowSymbolLayer:
+                glow_effect = QgsGlowSymbolLayer(color=QColor(255, 255, 0, 150), blurRadius=5)
+                last_range_symbol.appendSymbolLayer(glow_effect)
             ranges[-1].setSymbol(last_range_symbol)
 
             graduated_renderer.setRanges(ranges)
