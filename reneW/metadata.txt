@@ -1,6 +1,6 @@
 [general]
 name=reneW
-qgisMinimumVersion=3.34
+qgisMinimumVersion=3.28
 qgisMaximumVersion=3.99
 description=Ett QGIS-tillägg för att beräkna förnyelsebehov och identifiera hotspots för ledningsnät.
 about=Detta plugin hjälper användare att analysera och prioritera förnyelse av ledningsnät (vatten, spillvatten, dagvatten) genom att beräkna ett förnyelsebehov baserat på en Herz överlevnadsmodell. Det kan också identifiera geografiska 'hotspots' där flera högriskledningar ligger nära varandra.

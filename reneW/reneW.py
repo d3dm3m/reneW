@@ -4,7 +4,7 @@ from datetime import datetime
 
 from qgis.PyQt.QtWidgets import QAction, QProgressBar
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtCore import QVariant, QCoreApplication, Qt
+from qgis.PyQt.QtCore import QCoreApplication, Qt
 from qgis.PyQt.QtGui import QColor
 # --- Core QGIS Modules ---
 from qgis.core import (
@@ -12,53 +12,19 @@ from qgis.core import (
     QgsVectorLayer,
     QgsField,
     QgsFields,
-    QgsGeometry,
     QgsFeature,
-    QgsFeatureSink,
     QgsFeatureRequest,
     QgsProcessing,
-    QgsWkbTypes,
     QgsVectorLayerTemporalProperties,
     QgsMessageLog,
-    Qgis
+    Qgis,
+    QgsSymbol,
+    QgsFillSymbol,
+    QgsCategorizedSymbolRenderer,
+    QgsGraduatedSymbolRenderer,
+    QgsRendererRange,
+    QgsStyle
 )
-
-# --- Symbology & Rendering Modules (with backward compatibility) ---
-
-# Most symbology classes are in qgis.symbology (3.8+) or qgis.core (older)
-try:
-    from qgis.symbology import (
-        QgsSymbol,
-        QgsFillSymbol,
-        QgsSimpleFillSymbolLayer,
-        QgsCategorizedSymbolRenderer,
-        QgsGraduatedSymbolRenderer,
-        QgsRendererRange,
-        QgsStyle
-    )
-except (ModuleNotFoundError, ImportError):
-    from qgis.core import (
-        QgsSymbol,
-        QgsFillSymbol,
-        QgsSimpleFillSymbolLayer,
-        QgsCategorizedSymbolRenderer,
-        QgsGraduatedSymbolRenderer,
-        QgsRendererRange,
-        QgsStyle
-    )
-
-# QgsGlowSymbolLayer has a more complex history: symbology vs gui
-QgsGlowSymbolLayer = None
-try:
-    # Available in qgis.symbology in 3.0+
-    from qgis.symbology import QgsGlowSymbolLayer
-except (ModuleNotFoundError, ImportError):
-    try:
-        # Fallback for very old versions where it might have been in gui
-        from qgis.gui import QgsGlowSymbolLayer
-    except (ModuleNotFoundError, ImportError):
-        # If it's not found, the variable remains None and is handled gracefully later
-        pass
 
 # Note: QgsBlurEffect was removed from imports as it was unused and not available in QGIS < 3.6
 from qgis.processing import QgsProcessingFeedback
@@ -223,7 +189,7 @@ class ReneW:
             fields = provider.fields()
 
             if fields.indexFromName(output_field_name) == -1:
-                provider.addAttributes([QgsField(output_field_name, QVariant.Double)])
+                provider.addAttributes([QgsField(output_field_name, 'double')])
                 layer.updateFields()
 
             required_fields = ['material_field', 'year_field', 'dimension_field']
@@ -346,11 +312,11 @@ class ReneW:
 
         # Define fields for the new layer
         fields = QgsFields()
-        fields.append(QgsField("pipe_id", QVariant.String))
-        fields.append(QgsField("source_layer", QVariant.String))
-        fields.append(QgsField("year", QVariant.Int))
-        fields.append(QgsField("pipe_type", QVariant.String))
-        fields.append(QgsField("renewal_need", QVariant.Double))
+        fields.append(QgsField("pipe_id", 'String'))
+        fields.append(QgsField("source_layer", 'String'))
+        fields.append(QgsField("year", 'int'))
+        fields.append(QgsField("pipe_type", 'String'))
+        fields.append(QgsField("renewal_need", 'double'))
 
         # Create the memory layer
         temporal_layer = QgsVectorLayer(f"LineString?crs={QgsProject.instance().crs().authid()}", "Temporal Renewal Need", "memory")
@@ -484,10 +450,6 @@ class ReneW:
             # Add a glow effect to the symbol for the highest range
             last_range_symbol = QgsSymbol.defaultSymbol(layer.geometryType())
             last_range_symbol.setColor(ranges[-1].color())
-            # Conditionally add the glow effect if the class was imported successfully
-            if QgsGlowSymbolLayer:
-                glow_effect = QgsGlowSymbolLayer(color=QColor(255, 255, 0, 150), blurRadius=5)
-                last_range_symbol.appendSymbolLayer(glow_effect)
             ranges[-1].setSymbol(last_range_symbol)
 
             graduated_renderer.setRanges(ranges)
