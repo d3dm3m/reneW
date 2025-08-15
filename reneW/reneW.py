@@ -425,27 +425,57 @@ class ReneW:
         QgsMessageLog.logMessage(tr("reneW temporal analysis finished."), 'reneW', Qgis.Success)
 
     def _style_temporal_layer(self, layer):
-        """Applies a rule-based bivariate renderer and temporal configuration to the output layer."""
+        """
+        Applies a rule-based bivariate renderer and temporal configuration to the output layer.
+        Fully version-aware and robust against future QGIS API changes for QgsRuleBasedRenderer.
+        """
 
-        # --- 1. Create the root renderer ---
-        # Handle QGIS API changes for backwards compatibility.
-        try:
-            # QGIS 3.99+ API: Renderers may be created with a static .create() method.
-            root_rule = QgsRuleBasedRenderer.Rule(QgsSymbol())
-            renderer = QgsRuleBasedRenderer.create(root_rule)
-        except (TypeError, AttributeError):
-            # Fallback for older QGIS versions
-            renderer = QgsRuleBasedRenderer()
-            root_rule = renderer.rootRule()
+        from qgis.core import Qgis, QgsSymbol, QgsRuleBasedRenderer, QgsVectorLayerTemporalProperties
+        from qgis.PyQt.QtGui import QColor
 
-        # Define categories and color ramps from ColorBrewer
+        # --- 1. Create the root rule ---
+        root_symbol = QgsSymbol.defaultSymbol(layer.geometryType())
+        root_rule = QgsRuleBasedRenderer.Rule(root_symbol)
+
+        # --- 2. Create the renderer with a resilient version-aware approach ---
+        renderer = None
+
+        if Qgis.QGIS_VERSION_INT >= 39900:
+            # Known API change in QGIS 3.99+ — requires root rule
+            try:
+                renderer = QgsRuleBasedRenderer(root_rule)
+            except TypeError:
+                # If future QGIS removes the constructor, try using a factory method if present
+                if hasattr(QgsRuleBasedRenderer, "create"):
+                    renderer = QgsRuleBasedRenderer.create(root_rule)
+                else:
+                    raise
+        else:
+            # Pre-3.99 path — still prefer passing a root rule for consistency
+            try:
+                renderer = QgsRuleBasedRenderer(root_rule)
+            except TypeError:
+                if hasattr(QgsRuleBasedRenderer, "create"):
+                    renderer = QgsRuleBasedRenderer.create(root_rule)
+                else:
+                    raise
+
+        # --- 3. Define categories and color ramps ---
         categories = {
-            'water': {'label': 'Water', 'colors': ['#eff3ff', '#bdd7e7', '#6baed6', '#3182bd', '#08519c']},
-            'sewer/spill': {'label': 'Wastewater', 'colors': ['#fee5d9', '#fcae91', '#fb6a4a', '#de2d26', '#a50f15']},
-            'sewer/storm': {'label': 'Stormwater', 'colors': ['#e5f5e0', '#a1d99b', '#74c476', '#31a354', '#006d2c']}
+            'water': {
+                'label': 'Water',
+                'colors': ['#eff3ff', '#bdd7e7', '#6baed6', '#3182bd', '#08519c']
+            },
+            'sewer/spill': {
+                'label': 'Wastewater',
+                'colors': ['#fee5d9', '#fcae91', '#fb6a4a', '#de2d26', '#a50f15']
+            },
+            'sewer/storm': {
+                'label': 'Stormwater',
+                'colors': ['#e5f5e0', '#a1d99b', '#74c476', '#31a354', '#006d2c']
+            }
         }
 
-        # Define graduated ranges and labels
         range_data = [
             (0.0, 0.2, 'Very Low Need (0.0 - 0.2)'),
             (0.2, 0.4, 'Low Need (0.2 - 0.4)'),
@@ -454,9 +484,14 @@ class ReneW:
             (0.8, 1.01, 'Very High Need (0.8 - 1.0)')
         ]
 
-        # --- 2. Build the rule structure ---
-        # Clear any existing rules from the root to ensure a clean slate
-        root_rule.deleteChildren()
+        # --- 4. Build rules ---
+        # Ensure clean slate
+        try:
+            root_rule.deleteChildren()
+        except Exception:
+            # If method not available, manually remove children
+            while getattr(root_rule, "children", lambda: [])():
+                root_rule.removeChildAt(0)
 
         for pipe_type, style_info in categories.items():
             parent_rule = root_rule.clone()
@@ -464,22 +499,37 @@ class ReneW:
             parent_rule.setSymbol(None)
 
             for i, (lower, upper, label) in enumerate(range_data):
-                expression = f"\"pipe_type\" = '{pipe_type}' AND \"renewal_need\" >= {lower} AND \"renewal_need\" < {upper}"
+                expression = (
+                    f"\"pipe_type\" = '{pipe_type}' AND "
+                    f"\"renewal_need\" >= {lower} AND \"renewal_need\" < {upper}"
+                )
 
                 symbol = QgsSymbol.defaultSymbol(layer.geometryType())
                 if symbol:
+                    # QColor hex works across Qt5/Qt6
                     symbol.setColor(QColor(style_info['colors'][i]))
-                    symbol.setWidth(0.5)
+                    # setWidth exists for line symbols; for other geometries, it's ignored
+                    try:
+                        symbol.setWidth(0.5)
+                    except Exception:
+                        pass
 
                 child_rule = QgsRuleBasedRenderer.Rule(symbol, filterExp=expression, label=label)
                 parent_rule.appendChild(child_rule)
 
             root_rule.appendChild(parent_rule)
 
-        # Apply the new renderer to the layer
+        # Remove any initial placeholder rule if present
+        try:
+            if root_rule.children():
+                root_rule.removeChildAt(0)
+        except Exception:
+            pass
+
+        # --- 5. Apply renderer ---
         layer.setRenderer(renderer)
 
-        # --- 3. Configure temporal properties ---
+        # --- 6. Configure temporal properties ---
         temporal_props = layer.temporalProperties()
         temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeature)
         temporal_props.setStartField("year")
@@ -490,6 +540,15 @@ class ReneW:
         """
         Runs a hotspot analysis on the layers that have been processed.
         """
+
+        # Choose processing runner with graceful fallback
+        try:
+            import processing  # QGIS processing plugin
+            run_algo = processing.run
+        except Exception:
+            # Fallback to core API helper if available
+            from qgis.core import QgsProcessing
+            run_algo = QgsProcessing.run
         feedback = QgsProcessingFeedback()
         high_risk_layers = []
         project_crs = QgsProject.instance().crs()
@@ -522,19 +581,19 @@ class ReneW:
         # Step 2: Merge high-risk feature layers into one
         merged_layer_path = 'memory:merged_high_risk'
         merge_params = {'LAYERS': high_risk_layers, 'CRS': project_crs, 'OUTPUT': merged_layer_path}
-        merged_result = QgsProcessing.run("native:mergevectorlayers", merge_params, feedback=feedback)
+        merged_result = run_algo("native:mergevectorlayers", merge_params, feedback=feedback)
         merged_layer = merged_result['OUTPUT']
 
         # Step 3: Buffer the merged layer
         buffered_layer_path = 'memory:buffered'
         buffer_params = {'INPUT': merged_layer, 'DISTANCE': distance, 'SEGMENTS': 8, 'DISSOLVE': False, 'OUTPUT': buffered_layer_path}
-        buffered_result = QgsProcessing.run("native:buffer", buffer_params, feedback=feedback)
+        buffered_result = run_algo("native:buffer", buffer_params, feedback=feedback)
         buffered_layer = buffered_result['OUTPUT']
 
         # Step 4: Dissolve the buffered layer to create hotspots
         dissolved_layer_path = 'memory:dissolved_hotspots'
         dissolve_params = {'INPUT': buffered_layer, 'OUTPUT': dissolved_layer_path}
-        dissolved_result = QgsProcessing.run("native:dissolve", dissolve_params, feedback=feedback)
+        dissolved_result = run_algo("native:dissolve", dissolve_params, feedback=feedback)
         dissolved_layer = dissolved_result['OUTPUT']
 
         # Step 5: Calculate statistics for each hotspot
@@ -548,7 +607,7 @@ class ReneW:
             'DISCARD_NONMATCHING': True,
             'OUTPUT': stats_layer_path
         }
-        stats_result = QgsProcessing.run("native:joinattributesbylocation", stats_params, feedback=feedback)
+        stats_result = run_algo("native:joinattributesbylocation", stats_params, feedback=feedback)
         stats_layer = stats_result['OUTPUT']
 
         # Rename fields for clarity
