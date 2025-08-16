@@ -446,7 +446,7 @@ class ReneW:
     def _style_temporal_layer(self, layer):
         """
         Applies a rule-based bivariate renderer and temporal configuration to the output layer.
-        Fully version-aware and robust against future QGIS API changes for QgsRuleBasedRenderer.
+        Dynamically builds rules from distinct 'pipe_type' values and creates clear, descriptive legend labels.
         """
 
         from qgis.core import Qgis, QgsSymbol, QgsRuleBasedRenderer, QgsVectorLayerTemporalProperties
@@ -456,68 +456,61 @@ class ReneW:
         root_symbol = QgsSymbol.defaultSymbol(layer.geometryType())
         root_rule = QgsRuleBasedRenderer.Rule(root_symbol)
 
-        # --- 2. Create the renderer with a resilient version-aware approach ---
+        # --- 2. Create renderer robustly ---
         renderer = None
+        try:
+            renderer = QgsRuleBasedRenderer(root_rule)
+        except TypeError:
+            if hasattr(QgsRuleBasedRenderer, "create"):
+                renderer = QgsRuleBasedRenderer.create(root_rule)
+            else:
+                raise
 
-        if Qgis.QGIS_VERSION_INT >= 39900:
-            # Known API change in QGIS 3.99+ — requires root rule
-            try:
-                renderer = QgsRuleBasedRenderer(root_rule)
-            except TypeError:
-                # If future QGIS removes the constructor, try using a factory method if present
-                if hasattr(QgsRuleBasedRenderer, "create"):
-                    renderer = QgsRuleBasedRenderer.create(root_rule)
-                else:
-                    raise
-        else:
-            # Pre-3.99 path — still prefer passing a root rule for consistency
-            try:
-                renderer = QgsRuleBasedRenderer(root_rule)
-            except TypeError:
-                if hasattr(QgsRuleBasedRenderer, "create"):
-                    renderer = QgsRuleBasedRenderer.create(root_rule)
-                else:
-                    raise
-
-        # --- 3. Define categories and color ramps ---
-        categories = {
-            'water': {
-                'label': 'Water',
-                'colors': ['#eff3ff', '#bdd7e7', '#6baed6', '#3182bd', '#08519c']
-            },
-            'sewer/spill': {
-                'label': 'Wastewater',
-                'colors': ['#fee5d9', '#fcae91', '#fb6a4a', '#de2d26', '#a50f15']
-            },
-            'sewer/storm': {
-                'label': 'Stormwater',
-                'colors': ['#e5f5e0', '#a1d99b', '#74c476', '#31a354', '#006d2c']
-            }
+        # --- 3. Define known palettes for categories ---
+        palettes = {
+            'water': ['#eff3ff', '#bdd7e7', '#6baed6', '#3182bd', '#08519c'],
+            'sewer/spill': ['#fee5d9', '#fcae91', '#fb6a4a', '#de2d26', '#a50f15'],
+            'sewer/storm': ['#e5f5e0', '#a1d99b', '#74c476', '#31a354', '#006d2c']
         }
 
+        # Friendly display labels for pipe_type
+        pipe_labels = {
+            'water': 'Water',
+            'sewer/spill': 'Wastewater',
+            'sewer/storm': 'Stormwater'
+        }
+
+        # Fallback palette (greyscale)
+        fallback_colors = ['#f7f7f7', '#cccccc', '#969696', '#636363', '#252525']
+
+        # Graduated ranges
         range_data = [
-            (0.0, 0.2, 'Very Low Need (0.0 - 0.2)'),
-            (0.2, 0.4, 'Low Need (0.2 - 0.4)'),
-            (0.4, 0.6, 'Medium Need (0.4 - 0.6)'),
-            (0.6, 0.8, 'High Need (0.6 - 0.8)'),
-            (0.8, 1.01, 'Very High Need (0.8 - 1.0)')
+            (0.0, 0.2, 'Very Low Need (0.0 – 0.2)'),
+            (0.2, 0.4, 'Low Need (0.2 – 0.4)'),
+            (0.4, 0.6, 'Medium Need (0.4 – 0.6)'),
+            (0.6, 0.8, 'High Need (0.6 – 0.8)'),
+            (0.8, 1.01, 'Very High Need (0.8 – 1.0)')
         ]
 
-        # --- 4. Build rules ---
-        # Ensure clean slate
-        try:
-            root_rule.deleteChildren()
-        except Exception:
-            # If method not available, manually remove children
-            while getattr(root_rule, "children", lambda: [])():
-                root_rule.removeChildAt(0)
+        # --- 4. Get distinct pipe_type values from the layer ---
+        pipe_types = set()
+        idx = layer.fields().indexFromName("pipe_type")
+        if idx != -1:
+            for f in layer.getFeatures():
+                val = f.attributes()[idx]
+                if val:
+                    pipe_types.add(str(val).strip())
 
-        for pipe_type, style_info in categories.items():
+        # --- 5. Build dynamic rules with descriptive labels ---
+        for pipe_type in sorted(pipe_types):
+            colors = palettes.get(pipe_type.lower(), fallback_colors)
+            nice_label = pipe_labels.get(pipe_type.lower(), pipe_type)  # fallback to raw value
+
             parent_rule = root_rule.clone()
-            parent_rule.setLabel(style_info['label'])
+            parent_rule.setLabel(nice_label)
             parent_rule.setSymbol(None)
 
-            for i, (lower, upper, label) in enumerate(range_data):
+            for i, (lower, upper, need_label) in enumerate(range_data):
                 expression = (
                     f"\"pipe_type\" = '{pipe_type}' AND "
                     f"\"renewal_need\" >= {lower} AND \"renewal_need\" < {upper}"
@@ -525,41 +518,40 @@ class ReneW:
 
                 symbol = QgsSymbol.defaultSymbol(layer.geometryType())
                 if symbol:
-                    # QColor hex works across Qt5/Qt6
-                    symbol.setColor(QColor(style_info['colors'][i]))
-                    # setWidth exists for line symbols; for other geometries, it's ignored
                     try:
-                        symbol.setWidth(0.5)
+                        symbol.setColor(QColor(colors[i]))
+                    except Exception:
+                        symbol.setColor(QColor(fallback_colors[i]))
+                    try:
+                        symbol.setWidth(1.5)  # thicker for visibility
                     except Exception:
                         pass
 
-                child_rule = QgsRuleBasedRenderer.Rule(symbol, filterExp=expression, label=label)
+                # Combine pipe_type + need label into one clear legend label
+                legend_label = f"{nice_label} – {need_label}"
+
+                child_rule = QgsRuleBasedRenderer.Rule(symbol, filterExp=expression, label=legend_label)
                 parent_rule.appendChild(child_rule)
 
             root_rule.appendChild(parent_rule)
 
-        # Remove any initial placeholder rule if present
+        # --- 6. Clean placeholder rules and apply renderer ---
         try:
             if root_rule.children():
                 root_rule.removeChildAt(0)
         except Exception:
             pass
 
-        # --- 5. Apply renderer ---
         layer.setRenderer(renderer)
 
-        # --- 6. Configure temporal properties ---
+        # --- 7. Configure temporal properties with version-aware enum ---
         temporal_props = layer.temporalProperties()
 
-        # Handle QGIS API differences in temporal mode
         if hasattr(QgsVectorLayerTemporalProperties, "ModeFeature"):
-            # Older QGIS (<= 3.30)
             temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeature)
         elif hasattr(QgsVectorLayerTemporalProperties, "ModeFeatureBased"):
-            # Newer QGIS (>= 3.99)
             temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeatureBased)
         else:
-            # Graceful fallback if enum renamed again
             QgsMessageLog.logMessage(
                 "reneW: Could not determine temporal mode enum; layer may not animate correctly.",
                 "reneW",
