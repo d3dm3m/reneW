@@ -2,6 +2,7 @@ import os
 import json
 from datetime import datetime
 from qgis.PyQt.QtWidgets import QDialog, QDialogButtonBox, QWidget, QVBoxLayout, QCheckBox, QGroupBox, QGridLayout, QLabel, QFormLayout, QDoubleSpinBox, QSpinBox
+from qgis.PyQt import uic
 from qgis.core import QgsMapLayerProxyModel, QgsProject, QgsVectorLayer
 from qgis.gui import QgsFieldComboBox, QgsMapLayerComboBox
 from .parameter_editor_dialog import ParameterEditorDialog
