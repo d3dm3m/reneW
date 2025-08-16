@@ -4,7 +4,7 @@ from datetime import datetime
 
 from qgis.PyQt.QtWidgets import QAction, QProgressBar
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtCore import QCoreApplication, Qt, QVariant
+from qgis.PyQt.QtCore import QCoreApplication, Qt, QVariant, QDate, QTime, QDateTime
 from qgis.PyQt.QtGui import QColor
 # --- Core QGIS Modules ---
 from qgis.core import (
@@ -365,6 +365,8 @@ class ReneW:
         fields.append(QgsField("pipe_id", QVariant.String))
         fields.append(QgsField("source_layer", QVariant.String))
         fields.append(QgsField("year", QVariant.Int))
+        fields.append(QgsField("start_dt", QVariant.DateTime))
+        fields.append(QgsField("end_dt", QVariant.DateTime))
         fields.append(QgsField("pipe_type", QVariant.String))
         fields.append(QgsField("renewal_need", QVariant.Double))
 
@@ -444,10 +446,14 @@ class ReneW:
                     # Create a new feature for the temporal layer
                     out_feat = QgsFeature(fields)
                     out_feat.setGeometry(feature.geometry())
+                    start_dt = QDateTime(QDate(year, 1, 1), QTime(0, 0, 0))
+                    end_dt = QDateTime(QDate(year, 12, 31), QTime(23, 59, 59))
                     out_feat.setAttributes([
                         feature.id(),
                         layer_name,
                         year,
+                        start_dt,
+                        end_dt,
                         pipe_type_name,
                         renewal_need
                     ])
@@ -457,139 +463,81 @@ class ReneW:
         self.iface.messageBar().clearWidgets()
 
         self._style_temporal_layer(temporal_layer)
+
+        # Configure temporal properties for animation
+        temporal_props = temporal_layer.temporalProperties()
+        if hasattr(QgsVectorLayerTemporalProperties, "ModeFeature"):
+            temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeature)
+        elif hasattr(QgsVectorLayerTemporalProperties, "ModeFeatureBased"):
+            temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeatureBased)
+
+        temporal_props.setStartField("start_dt")
+        temporal_props.setEndField("end_dt")
+        temporal_props.setIsActive(True)
+
         QgsProject.instance().addMapLayer(temporal_layer)
         self.iface.messageBar().pushMessage(tr("Success"), tr("Temporal analysis layer created."), Qgis.Info, duration=5)
 
         QgsMessageLog.logMessage(tr("reneW temporal analysis finished."), 'reneW', Qgis.Success)
 
-    def _style_temporal_layer(self, layer):
-        """
-        Applies a rule-based bivariate renderer and temporal configuration to the output layer.
-        Dynamically builds rules from distinct 'pipe_type' values and creates clear, descriptive legend labels.
-        """
+def _style_temporal_layer(self, temporal_layer):
+    """
+    Apply styling to the temporal renewal need layer.
+    Updated for QGIS 3.99+ API (Qt6) — replaces deprecated setValues().
+    """
+    from qgis.core import (
+        QgsCategorizedSymbolRenderer,
+        QgsRendererCategory,
+        QgsClassificationQuantile,
+        QgsClassificationRange
+    )
+    from qgis.PyQt.QtGui import QColor
+    from qgis.core import QgsSymbol
 
-        from qgis.core import Qgis, QgsSymbol, QgsRuleBasedRenderer, QgsVectorLayerTemporalProperties
-        from qgis.PyQt.QtGui import QColor
+    # Grab field index for pipe type
+    type_field = temporal_layer.fields().lookupField("type")
+    if type_field == -1:
+        self.iface.messageBar().pushWarning("reneW", "No 'type' field found in temporal layer.")
+        return
 
-        # --- 1. Create the root rule ---
-        root_symbol = QgsSymbol.defaultSymbol(layer.geometryType())
-        root_rule = QgsRuleBasedRenderer.Rule(root_symbol)
+    # Collect unique pipe types
+    unique_types = temporal_layer.uniqueValues(type_field)
+    categories = []
 
-        # --- 2. Create renderer robustly ---
-        renderer = None
-        try:
-            renderer = QgsRuleBasedRenderer(root_rule)
-        except TypeError:
-            if hasattr(QgsRuleBasedRenderer, "create"):
-                renderer = QgsRuleBasedRenderer.create(root_rule)
-            else:
-                raise
+    # Base colors for types
+    base_colors = {
+        "water": QColor("blue"),
+        "spill": QColor("red"),
+        "storm": QColor("green"),
+    }
 
-        # --- 3. Define known palettes for categories ---
-        palettes = {
-            'water': ['#eff3ff', '#bdd7e7', '#6baed6', '#3182bd', '#08519c'],
-            'sewer/spill': ['#fee5d9', '#fcae91', '#fb6a4a', '#de2d26', '#a50f15'],
-            'sewer/storm': ['#e5f5e0', '#a1d99b', '#74c476', '#31a354', '#006d2c']
-        }
+    # Grab all renewal need values
+    all_values = [f["fornyelsebehov"] for f in temporal_layer.getFeatures() if f["fornyelsebehov"] is not None]
 
-        # Friendly display labels for pipe_type
-        pipe_labels = {
-            'water': 'Water',
-            'sewer/spill': 'Wastewater',
-            'sewer/storm': 'Stormwater'
-        }
+    if not all_values:
+        self.iface.messageBar().pushWarning("reneW", "No 'fornyelsebehov' values found to classify.")
+        return
 
-        # Fallback palette (greyscale)
-        fallback_colors = ['#f7f7f7', '#cccccc', '#969696', '#636363', '#252525']
+    # --- Quantile classification ---
+    classifier = QgsClassificationQuantile()
+    classes = classifier.calculateClasses(all_values, 5)  # 5 quantile bins
 
-        # --- 4. Get all renewal_need values to create a data-driven classification ---
-        all_values = [f['renewal_need'] for f in layer.getFeatures() if f['renewal_need'] is not None and f['renewal_need'] > 0]
+    # For each pipe type, create a color ramped symbol set
+    for pipe_type in unique_types:
+        base_color = base_colors.get(str(pipe_type).lower(), QColor("gray"))
+        for cls in classes:
+            # Create a gradient shade of the base color
+            color = QColor(base_color)
+            color.setAlphaF(0.3 + 0.7 * (cls.lowerBound() / max(all_values)))  # fade by renewal need
+            symbol = QgsSymbol.defaultSymbol(temporal_layer.geometryType())
+            symbol.setColor(color)
+            label = f"{pipe_type} – {cls.label()}"
+            category = QgsRendererCategory(pipe_type, symbol, label)
+            categories.append(category)
 
-        range_data = []
-        if all_values:
-            classifier = QgsClassificationQuantile()
-            classifier.setValues(all_values)
-            classifier.setNumberOfClasses(5)
-            ranges = classifier.ranges()
-            # Add descriptive labels to the ranges
-            labels = ['Very Low Need', 'Low Need', 'Medium Need', 'High Need', 'Very High Need']
-            for i, r in enumerate(ranges):
-                label_text = labels[i] if i < len(labels) else ''
-                label = f'{label_text} ({r.lowerValue():.3f} – {r.upperValue():.3f})'
-                range_data.append((r.lowerValue(), r.upperValue(), label))
-
-        if not range_data: # Fallback if there are no positive values
-            range_data = [(0.0, 1.01, 'No renewal need')]
-
-        # --- 5. Get distinct pipe_type values from the layer ---
-        pipe_types = set()
-        idx = layer.fields().indexFromName("pipe_type")
-        if idx != -1:
-            for f in layer.getFeatures():
-                val = f.attributes()[idx]
-                if val:
-                    pipe_types.add(str(val).strip())
-
-        # --- 5. Build dynamic rules with descriptive labels ---
-        for pipe_type in sorted(pipe_types):
-            colors = palettes.get(pipe_type.lower(), fallback_colors)
-            nice_label = pipe_labels.get(pipe_type.lower(), pipe_type)  # fallback to raw value
-
-            parent_rule = root_rule.clone()
-            parent_rule.setLabel(nice_label)
-            parent_rule.setSymbol(None)
-
-            for i, (lower, upper, need_label) in enumerate(range_data):
-                expression = (
-                    f"\"pipe_type\" = '{pipe_type}' AND "
-                    f"\"renewal_need\" >= {lower} AND \"renewal_need\" < {upper}"
-                )
-
-                symbol = QgsSymbol.defaultSymbol(layer.geometryType())
-                if symbol:
-                    try:
-                        symbol.setColor(QColor(colors[i]))
-                    except Exception:
-                        symbol.setColor(QColor(fallback_colors[i]))
-                    try:
-                        symbol.setWidth(1.5)  # thicker for visibility
-                    except Exception:
-                        pass
-
-                # Combine pipe_type + need label into one clear legend label
-                legend_label = f"{nice_label} – {need_label}"
-
-                child_rule = QgsRuleBasedRenderer.Rule(symbol, filterExp=expression, label=legend_label)
-                parent_rule.appendChild(child_rule)
-
-            root_rule.appendChild(parent_rule)
-
-        # --- 6. Clean placeholder rules and apply renderer ---
-        try:
-            if root_rule.children():
-                root_rule.removeChildAt(0)
-        except Exception:
-            pass
-
-        layer.setRenderer(renderer)
-
-        # --- 7. Configure temporal properties with version-aware enum ---
-        temporal_props = layer.temporalProperties()
-
-        if hasattr(QgsVectorLayerTemporalProperties, "ModeFeature"):
-            temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeature)
-        elif hasattr(QgsVectorLayerTemporalProperties, "ModeFeatureBased"):
-            temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeatureBased)
-        else:
-            QgsMessageLog.logMessage(
-                "reneW: Could not determine temporal mode enum; layer may not animate correctly.",
-                "reneW",
-                Qgis.Warning
-            )
-
-        temporal_props.setStartField("year")
-        temporal_props.setEndField("year")
-        temporal_props.setIsActive(True)
+    renderer = QgsCategorizedSymbolRenderer("type", categories)
+    temporal_layer.setRenderer(renderer)
+    temporal_layer.triggerRepaint()
 
     def _run_hotspot_analysis(self, analysis_configs, threshold, distance, output_field_name):
         """
