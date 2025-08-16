@@ -58,6 +58,15 @@ class ReneW:
         self.dlg = None
         self.results_dialog = None
 
+    def _friendly_pipe_label(self, pipe_type: str) -> str:
+        """Return a user-friendly label for pipe types."""
+        mapping = {
+            'water': 'Water',
+            'sewer/spill': 'Wastewater',
+            'sewer/storm': 'Stormwater'
+        }
+        return mapping.get(pipe_type.lower(), pipe_type)
+
     def _handle_zoom_to_feature(self, layer_id, feature_id):
         """Zooms the map canvas to a specific feature."""
         layer = QgsProject.instance().mapLayer(layer_id)
@@ -182,6 +191,8 @@ class ReneW:
 
             domain = 'water' if 'water' in config['type'].lower() else 'sewer'
             subtype = 'spill' if 'spill' in config['type'].lower() else ('storm' if 'storm' in config['type'].lower() else None)
+            pipe_type_name = config['type']
+            friendly_pipe = self._friendly_pipe_label(pipe_type_name)
 
             output_field_name = 'fornyelsebehov'
             provider = layer.dataProvider()
@@ -274,7 +285,15 @@ class ReneW:
 
                 layer.changeAttributeValue(feature.id(), output_idx, renewal_need)
                 if renewal_need >= 0.5:
-                    high_risk_results.append({'layer_name': layer_name, 'layer_id': layer.id(), 'feature_id': feature.id(), 'material': material_name, 'age': age, 'renewal_need': renewal_need})
+                    high_risk_results.append({
+                        'layer_name': layer_name,
+                        'layer_id': layer.id(),
+                        'feature_id': feature.id(),
+                        'pipe_type': friendly_pipe,
+                        'material': material_name,
+                        'age': age,
+                        'renewal_need': renewal_need
+                    })
 
             if layer.commitChanges():
                 self.iface.messageBar().pushMessage(tr("Success"), tr("Calculation complete for layer '{0}'.").format(layer_name), Qgis.Info, duration=4)
