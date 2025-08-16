@@ -198,6 +198,7 @@ class ReneW:
         processed_layers = 0
         high_risk_results = []
         current_year = datetime.now().year
+        output_field_name_for_hotspot = 'renewal_need'
 
         for config in analysis_configs:
             layer = config['layer']
@@ -207,13 +208,19 @@ class ReneW:
             domain, subtype, pipe_type_name = self._parse_pipe_type(config['type'])
             friendly_pipe = self._friendly_pipe_label(pipe_type_name)
 
-            output_field_name = 'fornyelsebehov'
+            output_field_name = 'renewal_need'
+            legacy_field_name = 'fornyelsebehov'
             provider = layer.dataProvider()
             fields = provider.fields()
 
+            # Backward compatibility: if legacy field exists, reuse it
             if fields.indexFromName(output_field_name) == -1:
-                provider.addAttributes([QgsField(output_field_name, QVariant.Double)])
-                layer.updateFields()
+                if fields.indexFromName(legacy_field_name) != -1:
+                    output_field_name = legacy_field_name
+                    output_field_name_for_hotspot = legacy_field_name
+                else:
+                    provider.addAttributes([QgsField(output_field_name, QVariant.Double)])
+                    layer.updateFields()
 
             required_fields = ['material_field', 'year_field', 'dimension_field']
             if not all(config.get(f) for f in required_fields):
@@ -324,7 +331,7 @@ class ReneW:
         if self.dlg.useHotspotAnalysis():
             hotspot_threshold = self.dlg.hotspotThreshold()
             hotspot_radius = self.dlg.hotspotRadius()
-            hotspot_layer = self._run_hotspot_analysis(analysis_configs, hotspot_threshold, hotspot_radius)
+            hotspot_layer = self._run_hotspot_analysis(analysis_configs, hotspot_threshold, hotspot_radius, output_field_name_for_hotspot)
             if hotspot_layer:
                 QgsProject.instance().addMapLayer(hotspot_layer)
                 self.iface.messageBar().pushMessage(tr("Success"), tr("Hotspot analysis complete."), Qgis.Info, duration=4)
@@ -573,7 +580,7 @@ class ReneW:
         temporal_props.setEndField("year")
         temporal_props.setIsActive(True)
 
-    def _run_hotspot_analysis(self, analysis_configs, threshold, distance):
+    def _run_hotspot_analysis(self, analysis_configs, threshold, distance, output_field_name):
         """
         Runs a hotspot analysis on the layers that have been processed.
         """
@@ -593,7 +600,7 @@ class ReneW:
         # Step 1: Create temporary layers of high-risk features for each input layer
         for config in analysis_configs:
             layer = config['layer']
-            expr = f"\"fornyelsebehov\" >= {threshold}"
+            expr = f"\"{output_field_name}\" >= {threshold}"
 
             # Create a memory layer with only the features matching the expression
             temp_layer = layer.clone()
@@ -639,7 +646,7 @@ class ReneW:
             'INPUT': dissolved_layer,
             'JOIN': merged_layer,
             'PREDICATE': [0],  # Intersects
-            'JOIN_FIELDS': ['fornyelsebehov'],
+            'JOIN_FIELDS': [output_field_name],
             'SUMMARIES': [5, 6],  # Count, Mean
             'DISCARD_NONMATCHING': True,
             'OUTPUT': stats_layer_path
@@ -649,8 +656,8 @@ class ReneW:
 
         # Rename fields for clarity
         stats_layer.startEditing()
-        stats_layer.renameAttribute(stats_layer.fields().lookupField('fornyelsebehov_count'), 'pipe_count')
-        stats_layer.renameAttribute(stats_layer.fields().lookupField('fornyelsebehov_mean'), 'avg_renewal_need')
+        stats_layer.renameAttribute(stats_layer.fields().lookupField(f'{output_field_name}_count'), 'pipe_count')
+        stats_layer.renameAttribute(stats_layer.fields().lookupField(f'{output_field_name}_mean'), 'avg_renewal_need')
         stats_layer.commitChanges()
 
         # Final styling

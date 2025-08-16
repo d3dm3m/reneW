@@ -11,19 +11,19 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>reneW - Riskkalkylering</string>
+   <string>reneW - Risk Calculation</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout_2">
    <item>
     <widget class="QGroupBox" name="mGroupBoxMunicipality">
      <property name="title">
-      <string>Kommungruppering</string>
+      <string>Municipality Filter</string>
      </property>
      <layout class="QHBoxLayout" name="horizontalLayout_3">
       <item>
        <widget class="QLabel" name="label_2">
         <property name="text">
-         <string>Kör analys för kommun:</string>
+         <string>Run analysis for municipality:</string>
         </property>
        </widget>
       </item>
@@ -56,13 +56,13 @@
    <item>
     <widget class="QGroupBox" name="groupBox">
      <property name="title">
-      <string>Globala inställningar</string>
+      <string>Global Settings</string>
      </property>
      <layout class="QHBoxLayout" name="horizontalLayout">
       <item>
        <widget class="QCheckBox" name="mCheckBoxEnableDimensionWeighting">
         <property name="text">
-         <string>Använd dimensionsviktning (faktor):</string>
+         <string>Use dimension weighting (factor):</string>
         </property>
        </widget>
       </item>
@@ -121,7 +121,7 @@
    <item>
     <widget class="QLabel" name="mStatusLabel">
      <property name="text">
-      <string>Status: OK</string>
+      <string>Status: Ready</string>
      </property>
      <property name="alignment">
       <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
