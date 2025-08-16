@@ -67,6 +67,21 @@ class ReneW:
         }
         return mapping.get(pipe_type.lower(), pipe_type)
 
+    def _parse_pipe_type(self, pipe_type_name: str):
+        """
+        Normalize pipe type string into (domain, subtype, friendly_type).
+        """
+        pt = pipe_type_name.lower().strip()
+        if pt == "water":
+            return ("water", None, "water")
+        elif pt in ("sewer/spill", "wastewater"):
+            return ("sewer", "spill", "sewer/spill")
+        elif pt in ("sewer/storm", "stormwater"):
+            return ("sewer", "storm", "sewer/storm")
+        else:
+            # fallback
+            return ("sewer", None, pipe_type_name)
+
     def _handle_zoom_to_feature(self, layer_id, feature_id):
         """Zooms the map canvas to a specific feature."""
         layer = QgsProject.instance().mapLayer(layer_id)
@@ -189,9 +204,7 @@ class ReneW:
             layer_name = layer.name()
             QgsMessageLog.logMessage(tr("Processing layer: {0}").format(layer_name), 'reneW', Qgis.Info)
 
-            domain = 'water' if 'water' in config['type'].lower() else 'sewer'
-            subtype = 'spill' if 'spill' in config['type'].lower() else ('storm' if 'storm' in config['type'].lower() else None)
-            pipe_type_name = config['type']
+            domain, subtype, pipe_type_name = self._parse_pipe_type(config['type'])
             friendly_pipe = self._friendly_pipe_label(pipe_type_name)
 
             output_field_name = 'fornyelsebehov'
@@ -372,9 +385,7 @@ class ReneW:
             layer = config['layer']
             layer_name = layer.name()
 
-            domain = 'water' if 'water' in config['type'].lower() else 'sewer'
-            subtype = 'spill' if 'spill' in config['type'].lower() else ('storm' if 'storm' in config['type'].lower() else None)
-            pipe_type_name = config['type']
+            domain, subtype, pipe_type_name = self._parse_pipe_type(config['type'])
 
             required_fields = ['material_field', 'year_field']
             if not all(config.get(f) for f in required_fields):
