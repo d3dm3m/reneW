@@ -14,6 +14,10 @@
 *   **Temporal Analysis:** Generates a time-aware layer to animate how renewal needs change over a user-defined period, fully integrated with the QGIS Temporal Controller.
 *   UI available in English and Swedish.
 
+## Compatibility
+
+This plugin has been updated to be compatible with a wide range of QGIS versions, including **QGIS 3.x** and the latest development versions **(3.99+).** It uses version-aware API calls to ensure stability across different releases.
+
 ## Installation
 
 1.  **Download the Plugin:** Obtain the plugin as a folder (e.g., named `reneW`).
@@ -51,11 +55,12 @@ When enabled, this feature generates a new, time-aware layer that is automatical
 
 ### Understanding the Output
 
-A new memory layer named `Temporal Renewal Need` will be added to your project. This layer is styled to show two variables at once:
+A new memory layer named `Temporal Renewal Need` will be added to your project. This layer is styled with a dynamic, rule-based renderer to show two variables at once:
 
-*   **Pipe Type:** The color of the pipe indicates its type (Blue for water, Red for wastewater, Green for stormwater).
-*   **Renewal Need:** The intensity of the color indicates the renewal need. A pale, light color means a low need, while a bright, saturated color means a high need.
-*   **Critical Pipes:** The pipes with the highest need will have a yellow "glow" effect, making them easy to spot.
+*   **Pipe Type:** The color of the pipe indicates its type (e.g., Blue for water, Red for wastewater, Green for stormwater). The renderer dynamically discovers the pipe types present in your data and styles them.
+*   **Renewal Need:** The intensity of the color indicates the renewal need. For each pipe type, a pale, light color means a low need, while a bright, saturated color means a high need.
+
+The legend is automatically generated to be clear and descriptive (e.g., "Water – High Need (0.6 – 0.8)").
 
 ### Animating the Map
 
@@ -90,37 +95,44 @@ The plugin's calculations are controlled by `parameters.json`, located in the pl
 
 ### `parameters.json` Structure
 
-The file contains a nested dictionary structure where material parameters (`mu` and `sigma`) are defined for each pipe domain.
+The file contains a nested dictionary structure where material parameters (`mu` and `sigma`) are defined for each pipe domain. The plugin ships with a comprehensive set of pre-defined materials and their expected lifetimes, but you can customize them.
 
 ```json
 {
-  "metadata": { ... },
-  "municipalities": [ ... ],
+  "metadata": { "...": "..." },
+  "municipalities": [ ],
+  "renovation_method_mapping": {
+    "1": "Lining",
+    "2": "Pipe Bursting"
+  },
   "water": {
-    "grajarn": { "mu": 60.0, "sigma": 5.0 },
-    "segjarn": { "mu": 95.0, "sigma": 5.0 },
-    "pvc": { "mu": 70.0, "sigma": 5.0 },
-    "ovrigt": { "mu": 50.0, "sigma": 25.0 }
+    "blyror": { "mu": 90.0, "sigma": 5.0 },
+    "gjutjarn": { "mu": 60.0, "sigma": 10.0 },
+    "segjarn": { "mu": 95.0, "sigma": 10.0 },
+    "...": {}
   },
   "sewer": {
     "spill": {
-      "grajarn": { "mu": 70.0, "sigma": 5.0 },
-      "betong": { "mu": 92.5, "sigma": 6.25 },
-      "ovrigt": { "mu": 50.0, "sigma": 25.0 }
+      "gjutjarn": { "mu": 70.0, "sigma": 10.0 },
+      "betongror": { "mu": 92.5, "sigma": 12.5 },
+      "...": {}
     },
     "storm": {
-      "grajarn": { "mu": 75.0, "sigma": 5.0 },
-      "betong": { "mu": 97.5, "sigma": 6.25 },
-      "ovrigt": { "mu": 50.0, "sigma": 25.0 }
+      "gjutjarn": { "mu": 75.0, "sigma": 10.0 },
+      "betongror": { "mu": 97.5, "sigma": 12.5 },
+      "...": {}
     }
+  },
+  "liners": {
+     "default": { "mu": 50.0, "sigma": 5.0 }
   }
 }
 ```
 
-*   The main keys are `water` and `sewer`. `sewer` is further divided into `spill` and `storm`.
-*   Inside each section is a dictionary of material parameter sets.
-*   The **keys** of this dictionary (e.g., `"grajarn"`) are internal identifiers used by the plugin.
-*   The **values** are objects containing the `"mu"` (mean lifetime) and `"sigma"` (standard deviation) for that material class.
+*   The main keys are `water` and `sewer`. `sewer` is further divided into `spill` (wastewater) and `storm` (stormwater).
+*   Inside each domain is a dictionary where each key is a material identifier (e.g., `"gjutjarn"`) and the value contains its `"mu"` (mean lifetime) and `"sigma"` (standard deviation).
+*   The `renovation_method_mapping` allows you to map numeric codes from your data to descriptive renovation methods.
+*   The `liners` section defines parameters for renovated pipes. If a renovation method is identified (e.g., "Lining"), the plugin will use these parameters instead of the original material's parameters, effectively resetting the pipe's age.
 
 ### How Material Matching Works
 
