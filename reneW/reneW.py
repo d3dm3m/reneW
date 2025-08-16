@@ -75,10 +75,10 @@ class ReneW:
         pt = pipe_type_name.lower().strip()
         if pt == "water":
             return ("water", None, "water")
-        elif pt in ("sewer/spill", "wastewater"):
-            return ("sewer", "spill", "sewer/spill")
+        elif pt in ("sewer", "sewer/spill", "wastewater"):
+            return ("sewer", "spill", "sewer")
         elif pt in ("sewer/storm", "stormwater"):
-            return ("sewer", "storm", "sewer/storm")
+            return ("sewer", "storm", "stormwater")
         else:
             # fallback
             return ("sewer", None, pipe_type_name)
