@@ -1,11 +1,13 @@
+# CRITICAL STRUCTURAL FIXES for reneW.py
+
 import os
 import re
 from datetime import datetime
 
 from qgis.PyQt.QtWidgets import QAction, QProgressBar
-from qgis.PyQt.QtGui import QIcon
+from qgis.PyQt.QtGui import QIcon, QColor
 from qgis.PyQt.QtCore import QCoreApplication, Qt, QVariant, QDate, QTime, QDateTime
-from qgis.PyQt.QtGui import QColor
+
 # --- Core QGIS Modules ---
 from qgis.core import (
     QgsProject,
@@ -26,7 +28,8 @@ from qgis.core import (
     QgsRendererRange,
     QgsRuleBasedRenderer,
     QgsStyle,
-    QgsClassificationQuantile
+    QgsClassificationQuantile,
+    QgsRendererCategory
 )
 
 # Import the code for the dialog and the calculation logic
@@ -44,12 +47,7 @@ class ReneW:
     """QGIS Plugin Implementation."""
 
     def __init__(self, iface):
-        """Constructor.
-        :param iface: An interface instance that will be passed to this class
-            which provides the hook by which you can manipulate the QGIS
-            application at run time.
-        :type iface: QgsInterface
-        """
+        """Constructor."""
         self.iface = iface
         self.plugin_dir = os.path.dirname(__file__)
         self.actions = []
@@ -69,9 +67,7 @@ class ReneW:
         return mapping.get(pipe_type.lower(), pipe_type)
 
     def _parse_pipe_type(self, pipe_type_name: str):
-        """
-        Normalize pipe type string into (domain, subtype, friendly_type).
-        """
+        """Normalize pipe type string into (domain, subtype, friendly_type)."""
         pt = pipe_type_name.lower().strip()
         if pt == "water":
             return ("water", None, "water")
@@ -105,18 +101,48 @@ class ReneW:
             return float(match.group(1))
         return 0.0
 
-    def add_action(
-            self,
-            icon_path,
-            text,
-            callback,
-            enabled_flag=True,
-            add_to_menu=True,
-            add_to_toolbar=True,
-            status_tip=None,
-            whats_this=None,
-            parent=None):
+    def _calculate_score(self, pipe_type, feature, pipe_age, dim_field=None):
+        """
+        Compute renewal need score as a normalized risk value [0–100],
+        then bucket it into discrete levels: Low, Medium, High.
+        """
+        # Base score factors
+        age_factor = min(pipe_age / 100.0, 1.0) * 50  # up to 50 points
+        dim_factor = 0
 
+        if dim_field and feature[dim_field]:
+            try:
+                dim_val = float(feature[dim_field])
+                # smaller diameters get higher risk
+                if dim_val < 200:
+                    dim_factor = 30
+                elif dim_val < 400:
+                    dim_factor = 15
+            except (ValueError, TypeError):
+                pass
+
+        type_factor = {
+            "water": 10,
+            "sewer": 20,  # Fixed: was "spill"
+            "stormwater": 15,  # Fixed: was "storm"
+        }.get(pipe_type.lower(), 5)
+
+        raw_score = age_factor + dim_factor + type_factor
+        score = min(raw_score, 100)
+
+        # Bucket into categories
+        if score < 33:
+            bucket = 1  # Low
+        elif score < 66:
+            bucket = 2  # Medium
+        else:
+            bucket = 3  # High
+
+        return bucket
+
+    def add_action(self, icon_path, text, callback, enabled_flag=True, add_to_menu=True,
+                   add_to_toolbar=True, status_tip=None, whats_this=None, parent=None):
+        """Add a toolbar icon to the toolbar."""
         icon = QIcon(icon_path)
         action = QAction(icon, text, parent)
         action.triggered.connect(callback)
@@ -178,11 +204,15 @@ class ReneW:
         """Performs the standard, single-year renewal need analysis."""
         analysis_configs = self.dlg.get_analysis_configs()
         if not analysis_configs:
-            self.iface.messageBar().pushMessage(tr("Info"), tr("No layers selected for analysis."), Qgis.Info, duration=3)
+            self.iface.messageBar().pushMessage(
+                tr("Info"),
+                tr("No layers selected for analysis."),
+                Qgis.Info, duration=3
+            )
             return
 
         QgsMessageLog.logMessage(tr("Starting reneW standard analysis."), 'reneW', Qgis.Info)
-        # ... (rest of the standard analysis logic)
+
         use_dimension_weighting = self.dlg.useDimensionWeighting()
         dimension_factor = self.dlg.dimensionFactor()
         selected_municipality_code = self.dlg.get_selected_municipality_code()
@@ -225,7 +255,11 @@ class ReneW:
 
             required_fields = ['material_field', 'year_field', 'dimension_field']
             if not all(config.get(f) for f in required_fields):
-                self.iface.messageBar().pushMessage(tr("Error"), tr("A required field is not selected for layer '{0}'. Skipping.").format(layer_name), Qgis.Warning)
+                self.iface.messageBar().pushMessage(
+                    tr("Error"),
+                    tr("A required field is not selected for layer '{0}'. Skipping.").format(layer_name),
+                    Qgis.Warning
+                )
                 continue
 
             field_indices = {f: fields.indexFromName(config[f]) for f in required_fields if config.get(f)}
@@ -270,7 +304,9 @@ class ReneW:
                 age = max(0, current_year - effective_install_year)
                 material_name = attrs[field_indices['material_field']]
                 try:
-                    key, params = material_lookup.find_material_key(params_data, domain=domain, subtype=subtype, material_name=str(material_name))
+                    key, params = material_lookup.find_material_key(
+                        params_data, domain=domain, subtype=subtype, material_name=str(material_name)
+                    )
                 except KeyError as e:
                     QgsMessageLog.logMessage(f"Material lookup failed for '{material_name}': {e}", 'reneW', Qgis.Warning)
                     continue
@@ -289,13 +325,19 @@ class ReneW:
                         reno_method_str = reno_method_val
 
                     if reno_method_str and reno_method_str.strip():
-                        liner_result = material_lookup.find_liner_key(params_data, domain=domain, subtype=subtype, method_name=reno_method_str)
+                        liner_result = material_lookup.find_liner_key(
+                            params_data, domain=domain, subtype=subtype, method_name=reno_method_str
+                        )
                         if liner_result:
                             key, params = liner_result
                             material_name = f"{material_name} (Lined: {reno_method_str})"
 
-                cohort = calculation_logic.Cohort(length_km=1.0, install_year=effective_install_year, material_key=key)
-                renewal_need = calculation_logic.renewal_for_cohort_period(cohort, current_year, current_year + 1, params)
+                cohort = calculation_logic.Cohort(
+                    length_km=1.0, install_year=effective_install_year, material_key=key
+                )
+                renewal_need = calculation_logic.renewal_for_cohort_period(
+                    cohort, current_year, current_year + 1, params
+                )
 
                 if use_dimension_weighting:
                     dimension_val = attrs[field_indices['dimension_field']]
@@ -317,25 +359,43 @@ class ReneW:
                     })
 
             if layer.commitChanges():
-                self.iface.messageBar().pushMessage(tr("Success"), tr("Calculation complete for layer '{0}'.").format(layer_name), Qgis.Info, duration=4)
+                self.iface.messageBar().pushMessage(
+                    tr("Success"),
+                    tr("Calculation complete for layer '{0}'.").format(layer_name),
+                    Qgis.Info, duration=4
+                )
                 processed_layers += 1
             else:
                 layer.rollBack()
-                self.iface.messageBar().pushMessage(tr("Error"), tr("Could not save changes for layer '{0}'.").format(layer_name), Qgis.Warning)
+                self.iface.messageBar().pushMessage(
+                    tr("Error"),
+                    tr("Could not save changes for layer '{0}'.").format(layer_name),
+                    Qgis.Warning
+                )
 
         self.iface.messageBar().clearWidgets()
         if processed_layers > 0:
-            self.iface.messageBar().pushMessage(tr("Info"), tr("Analysis complete for {0} layers.").format(processed_layers), Qgis.Info, duration=5)
+            self.iface.messageBar().pushMessage(
+                tr("Info"),
+                tr("Analysis complete for {0} layers.").format(processed_layers),
+                Qgis.Info, duration=5
+            )
             self.iface.mapCanvas().refresh()
 
         hotspot_layer = None
         if self.dlg.useHotspotAnalysis():
             hotspot_threshold = self.dlg.hotspotThreshold()
             hotspot_radius = self.dlg.hotspotRadius()
-            hotspot_layer = self._run_hotspot_analysis(analysis_configs, hotspot_threshold, hotspot_radius, output_field_name_for_hotspot)
+            hotspot_layer = self._run_hotspot_analysis(
+                analysis_configs, hotspot_threshold, hotspot_radius, output_field_name_for_hotspot
+            )
             if hotspot_layer:
                 QgsProject.instance().addMapLayer(hotspot_layer)
-                self.iface.messageBar().pushMessage(tr("Success"), tr("Hotspot analysis complete."), Qgis.Info, duration=4)
+                self.iface.messageBar().pushMessage(
+                    tr("Success"),
+                    tr("Hotspot analysis complete."),
+                    Qgis.Info, duration=4
+                )
 
         if high_risk_results:
             high_risk_results.sort(key=lambda x: x['renewal_need'], reverse=True)
@@ -347,269 +407,386 @@ class ReneW:
 
         QgsMessageLog.logMessage(tr("reneW standard analysis finished."), 'reneW', Qgis.Success)
 
-    def _calculate_score(self, pipe_type, feature, pipe_age, dim_field=None):
+    def _run_temporal_analysis(self, params_data):
         """
-        Compute renewal need score as a normalized risk value [0–100],
-        then bucket it into discrete levels: Low, Medium, High.
-        These buckets are later styled in the legend.
+        Performs the time-series analysis and creates a new time-aware layer.
+        FIXED: Now properly indented as a class method.
         """
+        analysis_configs = self.dlg.get_analysis_configs()
+        if not analysis_configs:
+            self.iface.messageBar().pushMessage(
+                tr("Info"),
+                tr("No layers selected for analysis."),
+                Qgis.Info, duration=3
+            )
+            return
 
-        # --- Base score factors (simplified example, tune as needed) ---
-        age_factor = min(pipe_age / 100.0, 1.0) * 50  # up to 50 points
-        dim_factor = 0
-        if dim_field and feature[dim_field]:
-            try:
-                dim_val = float(feature[dim_field])
-                # smaller diameters get higher risk
-                if dim_val < 200:
-                    dim_factor = 30
-                elif dim_val < 400:
-                    dim_factor = 15
-            except Exception:
-                pass
+        QgsMessageLog.logMessage(tr("Starting reneW temporal analysis."), 'reneW', Qgis.Info)
 
-        type_factor = {
-            "water": 10,
-            "spill": 20,
-            "storm": 15,
-        }.get(pipe_type.lower(), 5)
+        start_year = self.dlg.temporalStartYear()
+        end_year = self.dlg.temporalEndYear()
+        step = self.dlg.temporalStep()
 
-        raw_score = age_factor + dim_factor + type_factor
-        score = min(raw_score, 100)
+        # Define fields for the new layer
+        fields = QgsFields()
+        fields.append(QgsField("pipe_id", QVariant.String))
+        fields.append(QgsField("source_layer", QVariant.String))
+        fields.append(QgsField("year", QVariant.Int))
+        fields.append(QgsField("pipe_type", QVariant.String))
+        fields.append(QgsField("renewal_need", QVariant.Double))
+        fields.append(QgsField("start_time", QVariant.DateTime))
+        fields.append(QgsField("end_time", QVariant.DateTime))
 
-        # --- Bucket into categories ---
-        if score < 33:
-            bucket = 1  # Low
-        elif score < 66:
-            bucket = 2  # Medium
-        else:
-            bucket = 3  # High
+        # Create the memory layer
+        temporal_layer = QgsVectorLayer(
+            f"LineString?crs={QgsProject.instance().crs().authid()}",
+            "Temporal Renewal Need",
+            "memory"
+        )
+        provider = temporal_layer.dataProvider()
+        provider.addAttributes(fields)
+        temporal_layer.updateFields()
 
-        # Store both raw score and bucket
-        feature.setAttribute("fornyelsebehov", bucket)
-        return bucket
-
-def _run_temporal_analysis(self, params_data):
-    """
-    Build a temporal memory layer for renewal needs across a time range.
-    Creates per-year features with start_time and end_time for QGIS Temporal Controller.
-    """
-    from qgis.core import (
-        QgsVectorLayer,
-        QgsFields,
-        QgsField,
-        QgsFeature,
-        QgsWkbTypes,
-        QgsProject
-    )
-    from qgis.PyQt.QtCore import QVariant, QDateTime
-
-    start_year = params_data.get("temporal_start")
-    end_year = params_data.get("temporal_end")
-    step = params_data.get("temporal_step", 5)
-
-    # Build memory layer
-    fields = QgsFields()
-    fields.append(QgsField("type", QVariant.String))
-    fields.append(QgsField("fornyelsebehov", QVariant.Double))
-    fields.append(QgsField("year", QVariant.Int))
-    fields.append(QgsField("start_time", QVariant.DateTime))
-    fields.append(QgsField("end_time", QVariant.DateTime))
-
-    temporal_layer = QgsVectorLayer("LineString?crs=EPSG:3006", "Temporal Renewal Need", "memory")
-    temporal_layer.dataProvider().addAttributes(fields)
-    temporal_layer.updateFields()
-
-    dp = temporal_layer.dataProvider()
-
-    # --- Generate features ---
-    for pipe_type, layer_info in params_data["layers"].items():
-        layer = layer_info["layer"]
-        material_field = layer_info["material"]
-        year_field = layer_info["year"]
-        dim_field = layer_info.get("dimension")
-
-        for f in layer.getFeatures():
-            build_year = f[year_field]
-            if not build_year:
-                continue
-
-            build_year = int(build_year)
-
-            for year in range(start_year, end_year + 1, step):
-                pipe_age = year - build_year
-                if pipe_age < 0:
-                    continue
-
-                # Compute renewal need score (simplified helper call)
-                renewal_need = self._calculate_score(pipe_type, f, pipe_age, dim_field)
-
-                # New temporal feature
-                feat = QgsFeature()
-                feat.setFields(fields)
-                feat.setGeometry(f.geometry())
-                feat["type"] = pipe_type
-                feat["fornyelsebehov"] = renewal_need
-                feat["year"] = year
-
-                # Temporal controller needs start + end
-                start_dt = QDateTime.fromString(f"{year}-01-01T00:00:00", Qt.ISODate)
-                end_dt = QDateTime.fromString(f"{year+step}-01-01T00:00:00", Qt.ISODate)
-                feat["start_time"] = start_dt
-                feat["end_time"] = end_dt
-
-                dp.addFeatures([feat])
-
-    temporal_layer.updateExtents()
-
-    # Enable temporal properties
-    temporal_props = temporal_layer.temporalProperties()
-    try:
-        # Try new Qt6 enum first
-        if hasattr(QgsVectorLayerTemporalProperties, 'ModeFeatureDateTimeInstantFromField'):
-            temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeatureDateTimeInstantFromField)
-        elif hasattr(QgsVectorLayerTemporalProperties, 'ModeFeature'):
-            temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeature)
-        else:
-            # Fallback for older versions
-            temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeatureBased)
-    except AttributeError:
-        QgsMessageLog.logMessage(
-            "Could not set temporal mode - using default",
-            'reneW', Qgis.Warning
+        # Progress tracking
+        total_calcs = sum(
+            config['layer'].featureCount() * len(range(start_year, end_year + 1, step))
+            for config in analysis_configs
         )
 
-    temporal_props.setStartField("start_time")
-    temporal_props.setEndField("end_time")
-    temporal_props.setIsActive(True)
+        progress_bar = QProgressBar()
+        progress_bar.setMaximum(total_calcs)
+        progress_bar.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        message_bar_item = self.iface.messageBar().createMessage(tr("Calculating temporal renewal need..."))
+        message_bar_item.layout().addWidget(progress_bar)
+        self.iface.messageBar().pushWidget(message_bar_item, Qgis.Info)
 
-    # Style the layer with nested categories
-    self._style_temporal_layer(temporal_layer)
+        processed_calcs = 0
+        temporal_layer.startEditing()
 
-    # Add to project
-    QgsProject.instance().addMapLayer(temporal_layer)
+        for config in analysis_configs:
+            layer = config['layer']
+            layer_name = layer.name()
 
-def _style_temporal_layer(self, temporal_layer):
-    """
-    Apply styling to the temporal renewal need layer.
-    Uses explicit Low/Medium/High buckets instead of quantiles.
-    """
-    from qgis.core import (
-        QgsCategorizedSymbolRenderer,
-        QgsRendererCategory,
-        QgsSymbol
-    )
-    from qgis.PyQt.QtGui import QColor
+            domain, subtype, pipe_type_name = self._parse_pipe_type(config['type'])
 
-    type_field = temporal_layer.fields().lookupField("type")
-    score_field = temporal_layer.fields().lookupField("fornyelsebehov")
+            required_fields = ['material_field', 'year_field']
+            if not all(config.get(f) for f in required_fields):
+                continue
 
-    if type_field == -1 or score_field == -1:
-        self.iface.messageBar().pushWarning("reneW", "Missing fields 'type' or 'fornyelsebehov'.")
-        return
+            field_indices = {
+                f: layer.fields().indexFromName(config[f])
+                for f in required_fields if config.get(f)
+            }
 
-    unique_types = temporal_layer.uniqueValues(type_field)
-    categories = []
+            if config.get('reno_year_field'):
+                field_indices['reno_year_field'] = layer.fields().indexFromName(config['reno_year_field'])
+            if config.get('reno_method_field'):
+                field_indices['reno_method_field'] = layer.fields().indexFromName(config['reno_method_field'])
 
-    # Define fixed labels + colors for buckets
-    labels = {1: "Low", 2: "Medium", 3: "High"}
-    colors = {1: QColor("green"), 2: QColor("orange"), 3: QColor("red")}
+            for feature in layer.getFeatures():
+                attrs = feature.attributes()
 
-    # Build categories for each pipe type × bucket
-    for pipe_type in unique_types:
-        for bucket, label in labels.items():
-            symbol = QgsSymbol.defaultSymbol(temporal_layer.geometryType())
-            symbol.setColor(colors[bucket])
-            full_label = f"{pipe_type} – {label}"
-            categories.append(QgsRendererCategory(bucket, symbol, full_label))
+                year_val = attrs[field_indices['year_field']]
+                if year_val is None or str(year_val).strip() in ['1900', 'null', 'NULL']:
+                    continue
 
-    renderer = QgsCategorizedSymbolRenderer("fornyelsebehov", categories)
-    temporal_layer.setRenderer(renderer)
-    temporal_layer.triggerRepaint()
+                try:
+                    installation_year = int(year_val)
+                except (ValueError, TypeError):
+                    continue
+
+                effective_install_year = installation_year
+                if 'reno_year_field' in field_indices:
+                    reno_year_val = attrs[field_indices['reno_year_field']]
+                    if reno_year_val:
+                        try:
+                            renovation_year = int(reno_year_val)
+                            if renovation_year > installation_year:
+                                effective_install_year = renovation_year
+                        except (ValueError, TypeError):
+                            pass
+
+                material_name = str(attrs[field_indices['material_field']])
+                try:
+                    key, params = material_lookup.find_material_key(
+                        params_data, domain=domain, subtype=subtype, material_name=material_name
+                    )
+                except KeyError as e:
+                    QgsMessageLog.logMessage(
+                        f"Material lookup failed for '{material_name}': {e}",
+                        'reneW', Qgis.Warning
+                    )
+                    continue
+
+                for year in range(start_year, end_year + 1, step):
+                    processed_calcs += 1
+                    progress_bar.setValue(processed_calcs)
+
+                    cohort = calculation_logic.Cohort(
+                        length_km=1.0,
+                        install_year=effective_install_year,
+                        material_key=key
+                    )
+                    renewal_need = calculation_logic.renewal_for_cohort_period(
+                        cohort, year, year + 1, params
+                    )
+
+                    # Create temporal feature with proper datetime fields
+                    out_feat = QgsFeature(fields)
+                    out_feat.setGeometry(feature.geometry())
+
+                    # Create datetime objects for temporal controller
+                    start_datetime = QDateTime.fromString(f"{year}-01-01T00:00:00", Qt.ISODate)
+                    end_datetime = QDateTime.fromString(f"{year + step}-01-01T00:00:00", Qt.ISODate)
+
+                    out_feat.setAttributes([
+                        str(feature.id()),
+                        layer_name,
+                        year,
+                        pipe_type_name,
+                        renewal_need,
+                        start_datetime,
+                        end_datetime
+                    ])
+                    provider.addFeature(out_feat)
+
+        temporal_layer.commitChanges()
+        self.iface.messageBar().clearWidgets()
+
+        # Configure temporal properties
+        self._configure_temporal_properties(temporal_layer)
+
+        # Apply styling
+        self._style_temporal_layer(temporal_layer)
+
+        # Add to project
+        QgsProject.instance().addMapLayer(temporal_layer)
+        self.iface.messageBar().pushMessage(
+            tr("Success"),
+            tr("Temporal analysis layer created."),
+            Qgis.Info, duration=5
+        )
+
+        QgsMessageLog.logMessage(tr("reneW temporal analysis finished."), 'reneW', Qgis.Success)
+
+    def _configure_temporal_properties(self, temporal_layer):
+        """Configure temporal properties with Qt6 compatibility."""
+        temporal_props = temporal_layer.temporalProperties()
+
+        # Qt6 compatible temporal mode setting
+        try:
+            # Try new Qt6 enum first
+            if hasattr(QgsVectorLayerTemporalProperties, 'ModeFeatureDateTimeInstantFromField'):
+                temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeatureDateTimeInstantFromField)
+            elif hasattr(QgsVectorLayerTemporalProperties, 'ModeFeature'):
+                temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeature)
+            else:
+                # Fallback for older versions
+                temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeatureBased)
+        except AttributeError:
+            QgsMessageLog.logMessage(
+                "Could not set temporal mode - using default",
+                'reneW', Qgis.Warning
+            )
+
+        temporal_props.setStartField("start_time")
+        temporal_props.setEndField("end_time")
+        temporal_props.setIsActive(True)
+
+    def _style_temporal_layer(self, layer):
+        """Apply rule-based styling to the temporal layer."""
+        # Create root rule
+        root_symbol = QgsSymbol.defaultSymbol(layer.geometryType())
+        root_rule = QgsRuleBasedRenderer.Rule(root_symbol)
+
+        # Create renderer
+        try:
+            renderer = QgsRuleBasedRenderer(root_rule)
+        except TypeError:
+            if hasattr(QgsRuleBasedRenderer, "create"):
+                renderer = QgsRuleBasedRenderer.create(root_rule)
+
+        # Define color palettes for different pipe types
+        palettes = {
+            'water': ['#e5f5f9', '#99d8c9', '#2ca25f'],
+            'sewer': ['#fee5d9', '#fcae91', '#de2d26'],
+            'stormwater': ['#e5f5e0', '#a1d99b', '#31a354']
+        }
+
+        # Get unique pipe types and create rules
+        pipe_types = set()
+        pipe_type_idx = layer.fields().indexFromName("pipe_type")
+
+        if pipe_type_idx != -1:
+            for feature in layer.getFeatures():
+                pipe_type = feature.attributes()[pipe_type_idx]
+                if pipe_type:
+                    pipe_types.add(str(pipe_type))
+
+        # Create rules for each pipe type with renewal need categories
+        for pipe_type in sorted(pipe_types):
+            colors = palettes.get(pipe_type.lower(), ['#f0f0f0', '#bdbdbd', '#636363'])
+
+            # Low renewal need (0-0.33)
+            low_symbol = QgsSymbol.defaultSymbol(layer.geometryType())
+            low_symbol.setColor(QColor(colors[0]))
+            low_rule = QgsRuleBasedRenderer.Rule(
+                low_symbol,
+                filterExp=f'"pipe_type" = \'{pipe_type}\' AND "renewal_need" <= 0.33',
+                label=f'{pipe_type} - Low Risk'
+            )
+            root_rule.appendChild(low_rule)
+
+            # Medium renewal need (0.33-0.66)
+            med_symbol = QgsSymbol.defaultSymbol(layer.geometryType())
+            med_symbol.setColor(QColor(colors[1]))
+            med_rule = QgsRuleBasedRenderer.Rule(
+                med_symbol,
+                filterExp=f'"pipe_type" = \'{pipe_type}\' AND "renewal_need" > 0.33 AND "renewal_need" <= 0.66',
+                label=f'{pipe_type} - Medium Risk'
+            )
+            root_rule.appendChild(med_rule)
+
+            # High renewal need (>0.66)
+            high_symbol = QgsSymbol.defaultSymbol(layer.geometryType())
+            high_symbol.setColor(QColor(colors[2]))
+            high_rule = QgsRuleBasedRenderer.Rule(
+                high_symbol,
+                filterExp=f'"pipe_type" = \'{pipe_type}\' AND "renewal_need" > 0.66',
+                label=f'{pipe_type} - High Risk'
+            )
+            root_rule.appendChild(high_rule)
+
+        # Remove the default root rule if it has children
+        if root_rule.children():
+            try:
+                root_rule.removeChildAt(0)
+            except:
+                pass
+
+        layer.setRenderer(renderer)
 
     def _run_hotspot_analysis(self, analysis_configs, threshold, distance, output_field_name):
-        """
-        Runs a hotspot analysis on the layers that have been processed.
-        """
-
-        # Choose processing runner with graceful fallback
+        """Run hotspot analysis on processed layers."""
+        # Import processing with fallback
         try:
-            import processing  # QGIS processing plugin
+            import processing
             run_algo = processing.run
-        except Exception:
-            # Fallback to core API helper if available
+        except ImportError:
             from qgis.core import QgsProcessing
             run_algo = QgsProcessing.run
+
         feedback = QgsProcessingFeedback()
         high_risk_layers = []
         project_crs = QgsProject.instance().crs()
 
-        # Step 1: Create temporary layers of high-risk features for each input layer
+        # Step 1: Create temporary layers of high-risk features
         for config in analysis_configs:
             layer = config['layer']
-            expr = f"\"{output_field_name}\" >= {threshold}"
+            expr = f'"{output_field_name}" >= {threshold}'
 
-            # Create a memory layer with only the features matching the expression
-            temp_layer = layer.clone()
-            temp_layer.setName(f"high_risk_{layer.name()}")
+            # Create memory layer with filtered features
+            temp_layer = QgsVectorLayer(
+                f"LineString?crs={project_crs.authid()}",
+                f"high_risk_{layer.name()}",
+                "memory"
+            )
 
-            # Request features with the filter
-            request = QgsFeatureRequest().setFilterExpression(expr)
-
-            # Use a data provider to add features to the temp layer
             temp_provider = temp_layer.dataProvider()
-            temp_layer.startEditing()
-            temp_provider.addFeatures(layer.getFeatures(request))
-            temp_layer.commitChanges()
+            temp_provider.addAttributes(layer.fields())
+            temp_layer.updateFields()
 
-            if temp_layer.featureCount() > 0:
+            # Add filtered features
+            request = QgsFeatureRequest().setFilterExpression(expr)
+            features = [f for f in layer.getFeatures(request)]
+
+            if features:
+                temp_layer.startEditing()
+                temp_provider.addFeatures(features)
+                temp_layer.commitChanges()
                 high_risk_layers.append(temp_layer)
 
         if not high_risk_layers:
-            self.iface.messageBar().pushMessage(tr("Info"), tr("No features found above the risk threshold for hotspot analysis."), Qgis.Info)
+            self.iface.messageBar().pushMessage(
+                tr("Info"),
+                tr("No features found above the risk threshold for hotspot analysis."),
+                Qgis.Info
+            )
             return None
 
-        # Step 2: Merge high-risk feature layers into one
-        merged_layer_path = 'memory:merged_high_risk'
-        merge_params = {'LAYERS': high_risk_layers, 'CRS': project_crs, 'OUTPUT': merged_layer_path}
-        merged_result = run_algo("native:mergevectorlayers", merge_params, feedback=feedback)
-        merged_layer = merged_result['OUTPUT']
+        try:
+            # Step 2: Merge high-risk layers
+            merge_params = {
+                'LAYERS': high_risk_layers,
+                'CRS': project_crs,
+                'OUTPUT': 'memory:merged_high_risk'
+            }
+            merged_result = run_algo("native:mergevectorlayers", merge_params, feedback=feedback)
+            merged_layer = merged_result['OUTPUT']
 
-        # Step 3: Buffer the merged layer
-        buffered_layer_path = 'memory:buffered'
-        buffer_params = {'INPUT': merged_layer, 'DISTANCE': distance, 'SEGMENTS': 8, 'DISSOLVE': False, 'OUTPUT': buffered_layer_path}
-        buffered_result = run_algo("native:buffer", buffer_params, feedback=feedback)
-        buffered_layer = buffered_result['OUTPUT']
+            # Step 3: Buffer the merged layer
+            buffer_params = {
+                'INPUT': merged_layer,
+                'DISTANCE': distance,
+                'SEGMENTS': 8,
+                'DISSOLVE': False,
+                'OUTPUT': 'memory:buffered'
+            }
+            buffered_result = run_algo("native:buffer", buffer_params, feedback=feedback)
+            buffered_layer = buffered_result['OUTPUT']
 
-        # Step 4: Dissolve the buffered layer to create hotspots
-        dissolved_layer_path = 'memory:dissolved_hotspots'
-        dissolve_params = {'INPUT': buffered_layer, 'OUTPUT': dissolved_layer_path}
-        dissolved_result = run_algo("native:dissolve", dissolve_params, feedback=feedback)
-        dissolved_layer = dissolved_result['OUTPUT']
+            # Step 4: Dissolve overlapping buffers
+            dissolve_params = {
+                'INPUT': buffered_layer,
+                'OUTPUT': 'memory:dissolved_hotspots'
+            }
+            dissolved_result = run_algo("native:dissolve", dissolve_params, feedback=feedback)
+            dissolved_layer = dissolved_result['OUTPUT']
 
-        # Step 5: Calculate statistics for each hotspot
-        stats_layer_path = 'memory:hotspots_with_stats'
-        stats_params = {
-            'INPUT': dissolved_layer,
-            'JOIN': merged_layer,
-            'PREDICATE': [0],  # Intersects
-            'JOIN_FIELDS': [output_field_name],
-            'SUMMARIES': [5, 6],  # Count, Mean
-            'DISCARD_NONMATCHING': True,
-            'OUTPUT': stats_layer_path
-        }
-        stats_result = run_algo("native:joinattributesbylocation", stats_params, feedback=feedback)
-        stats_layer = stats_result['OUTPUT']
+            # Step 5: Calculate statistics for each hotspot
+            stats_params = {
+                'INPUT': dissolved_layer,
+                'JOIN': merged_layer,
+                'PREDICATE': [0],  # Intersects
+                'JOIN_FIELDS': [output_field_name],
+                'SUMMARIES': [5, 6],  # Count, Mean
+                'DISCARD_NONMATCHING': True,
+                'OUTPUT': 'memory:hotspots_with_stats'
+            }
+            stats_result = run_algo("native:joinattributesbylocation", stats_params, feedback=feedback)
+            stats_layer = stats_result['OUTPUT']
 
-        # Rename fields for clarity
-        stats_layer.startEditing()
-        stats_layer.renameAttribute(stats_layer.fields().lookupField(f'{output_field_name}_count'), 'pipe_count')
-        stats_layer.renameAttribute(stats_layer.fields().lookupField(f'{output_field_name}_mean'), 'avg_renewal_need')
-        stats_layer.commitChanges()
+            # Rename fields for clarity
+            stats_layer.startEditing()
+            count_field_idx = stats_layer.fields().lookupField(f'{output_field_name}_count')
+            mean_field_idx = stats_layer.fields().lookupField(f'{output_field_name}_mean')
 
-        # Final styling
-        symbol = QgsFillSymbol.createSimple({'color': '255,0,0,70', 'outline_color': 'red', 'outline_width': '0.5'})
-        stats_layer.renderer().setSymbol(symbol)
-        stats_layer.setName(tr("Hotspots"))
+            if count_field_idx != -1:
+                stats_layer.renameAttribute(count_field_idx, 'pipe_count')
+            if mean_field_idx != -1:
+                stats_layer.renameAttribute(mean_field_idx, 'avg_renewal_need')
 
-        return stats_layer
+            stats_layer.commitChanges()
+
+            # Apply styling
+            symbol = QgsFillSymbol.createSimple({
+                'color': '255,0,0,70',
+                'outline_color': 'red',
+                'outline_width': '0.5'
+            })
+            stats_layer.renderer().setSymbol(symbol)
+            stats_layer.setName(tr("Hotspots"))
+
+            return stats_layer
+
+        except Exception as e:
+            QgsMessageLog.logMessage(
+                f"Hotspot analysis failed: {e}",
+                'reneW', Qgis.Critical
+            )
+            self.iface.messageBar().pushMessage(
+                tr("Error"),
+                tr("Hotspot analysis failed: {0}").format(str(e)),
+                Qgis.Critical
+            )
+            return None
