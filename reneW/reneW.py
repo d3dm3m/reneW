@@ -531,7 +531,22 @@ class ReneW:
 
         # --- 6. Configure temporal properties ---
         temporal_props = layer.temporalProperties()
-        temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeature)
+
+        # Handle QGIS API differences in temporal mode
+        if hasattr(QgsVectorLayerTemporalProperties, "ModeFeature"):
+            # Older QGIS (<= 3.30)
+            temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeature)
+        elif hasattr(QgsVectorLayerTemporalProperties, "ModeFeatureBased"):
+            # Newer QGIS (>= 3.99)
+            temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeatureBased)
+        else:
+            # Graceful fallback if enum renamed again
+            QgsMessageLog.logMessage(
+                "reneW: Could not determine temporal mode enum; layer may not animate correctly.",
+                "reneW",
+                Qgis.Warning
+            )
+
         temporal_props.setStartField("year")
         temporal_props.setEndField("year")
         temporal_props.setIsActive(True)
