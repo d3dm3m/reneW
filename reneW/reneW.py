@@ -449,6 +449,9 @@ class ReneW:
         fields.append(QgsField("renewal_need", QVariant.Double))
         fields.append(QgsField("start_time", QVariant.DateTime))
         fields.append(QgsField("end_time", QVariant.DateTime))
+        fields.append(QgsField("material", QVariant.String))
+        fields.append(QgsField("dimension", QVariant.Double))
+        fields.append(QgsField("age", QVariant.Int))
 
         # Create the memory layer
         temporal_layer = QgsVectorLayer(
@@ -495,6 +498,8 @@ class ReneW:
                 field_indices['reno_year_field'] = layer.fields().indexFromName(config['reno_year_field'])
             if config.get('reno_method_field'):
                 field_indices['reno_method_field'] = layer.fields().indexFromName(config['reno_method_field'])
+            if 'dimension_field' in config:
+                field_indices['dimension_field'] = layer.fields().indexFromName(config['dimension_field'])
 
             for feature in layer.getFeatures():
                 attrs = feature.attributes()
@@ -552,6 +557,12 @@ class ReneW:
                     start_datetime = QDateTime.fromString(f"{year}-01-01T00:00:00", get_iso_format())
                     end_datetime = QDateTime.fromString(f"{year + step}-01-01T00:00:00", get_iso_format())
 
+                    material_val = str(attrs[field_indices['material_field']])
+                    dimension_val = None
+                    if 'dimension_field' in field_indices and field_indices['dimension_field'] != -1:
+                        dimension_val = self._parse_dimension(attrs[field_indices['dimension_field']])
+                    age_val = year - effective_install_year
+
                     out_feat.setAttributes([
                         str(feature.id()),
                         layer_name,
@@ -559,7 +570,10 @@ class ReneW:
                         pipe_type_name,
                         renewal_need,
                         start_datetime,
-                        end_datetime
+                        end_datetime,
+                        material_val,
+                        dimension_val,
+                        age_val
                     ])
                     provider.addFeature(out_feat)
 
