@@ -190,7 +190,7 @@ class ReneW:
         total_features = sum(config['layer'].featureCount() for config in analysis_configs)
         progress_bar = QProgressBar()
         progress_bar.setMaximum(total_features)
-        progress_bar.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        progress_bar.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         message_bar_item = self.iface.messageBar().createMessage(tr("Calculating renewal need..."))
         message_bar_item.layout().addWidget(progress_bar)
         self.iface.messageBar().pushWidget(message_bar_item, Qgis.Info)
@@ -453,8 +453,8 @@ def _run_temporal_analysis(self, params_data):
                 feat["year"] = year
 
                 # Temporal controller needs start + end
-                start_dt = QDateTime.fromString(f"{year}-01-01T00:00:00", "yyyy-MM-ddTHH:mm:ss")
-                end_dt = QDateTime.fromString(f"{year+step}-01-01T00:00:00", "yyyy-MM-ddTHH:mm:ss")
+                start_dt = QDateTime.fromString(f"{year}-01-01T00:00:00", Qt.ISODate)
+                end_dt = QDateTime.fromString(f"{year+step}-01-01T00:00:00", Qt.ISODate)
                 feat["start_time"] = start_dt
                 feat["end_time"] = end_dt
 
@@ -464,6 +464,21 @@ def _run_temporal_analysis(self, params_data):
 
     # Enable temporal properties
     temporal_props = temporal_layer.temporalProperties()
+    try:
+        # Try new Qt6 enum first
+        if hasattr(QgsVectorLayerTemporalProperties, 'ModeFeatureDateTimeInstantFromField'):
+            temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeatureDateTimeInstantFromField)
+        elif hasattr(QgsVectorLayerTemporalProperties, 'ModeFeature'):
+            temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeature)
+        else:
+            # Fallback for older versions
+            temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeatureBased)
+    except AttributeError:
+        QgsMessageLog.logMessage(
+            "Could not set temporal mode - using default",
+            'reneW', Qgis.Warning
+        )
+
     temporal_props.setStartField("start_time")
     temporal_props.setEndField("end_time")
     temporal_props.setIsActive(True)

@@ -35,8 +35,8 @@ class ReneWDialog(QDialog, FORM_CLASS):
         hotspot_layout.addRow(self.tr("Renewal need threshold:"), self.mSpinBoxHotspotThreshold)
         hotspot_layout.addRow(self.tr("Search radius:"), self.mSpinBoxHotspotRadius)
         self.groupBox.layout().insertWidget(2, hotspot_groupbox)
-        self.mCheckBoxEnableHotspot.toggled.connect(self.mSpinBoxHotspotThreshold.setEnabled)
-        self.mCheckBoxEnableHotspot.toggled.connect(self.mSpinBoxHotspotRadius.setEnabled)
+        self.mCheckBoxEnableHotspot.toggled[bool].connect(self.mSpinBoxHotspotThreshold.setEnabled)
+        self.mCheckBoxEnableHotspot.toggled[bool].connect(self.mSpinBoxHotspotRadius.setEnabled)
         self.mSpinBoxHotspotThreshold.setEnabled(False)
         self.mSpinBoxHotspotRadius.setEnabled(False)
 
@@ -68,9 +68,9 @@ class ReneWDialog(QDialog, FORM_CLASS):
         self.tabs = []
         self._create_dynamic_tabs()
         self._populate_municipality_filter()
-        self.mCheckBoxEnableDimensionWeighting.toggled.connect(self.mSpinBoxDimensionFactor.setEnabled)
+        self.mCheckBoxEnableDimensionWeighting.toggled[bool].connect(self.mSpinBoxDimensionFactor.setEnabled)
         self.mBtnEditParameters.clicked.connect(self._open_parameter_editor)
-        self.mTemporalGroupBox.toggled.connect(self._validate_inputs)
+        self.mTemporalGroupBox.toggled[bool].connect(self._validate_inputs)
         self.mTemporalStartYearSpinBox.valueChanged.connect(self._validate_inputs)
         self.mTemporalEndYearSpinBox.valueChanged.connect(self._validate_inputs)
 
@@ -125,11 +125,11 @@ class ReneWDialog(QDialog, FORM_CLASS):
             tab_layout.addWidget(group)
             self.mTabWidget.addTab(tab_widget, set_name)
             self.tabs.append(tab_data)
-            check.toggled.connect(group.setEnabled)
+            check.toggled[bool].connect(group.setEnabled)
             tab_data['layer_combo'].setFilters(QgsMapLayerProxyModel.VectorLayer)
             for combo_name in ['muni_combo', 'mat_combo', 'year_combo', 'dim_combo', 'reno_year_combo', 'reno_method_combo']:
                 tab_data['layer_combo'].layerChanged.connect(tab_data[combo_name].setLayer)
-            check.toggled.connect(self._validate_inputs)
+            check.toggled[bool].connect(self._validate_inputs)
             tab_data['layer_combo'].layerChanged.connect(self._validate_inputs)
             tab_data['mat_combo'].fieldChanged.connect(self._validate_inputs)
             tab_data['year_combo'].fieldChanged.connect(self._validate_inputs)
@@ -192,7 +192,13 @@ class ReneWDialog(QDialog, FORM_CLASS):
         return configs
 
     def _validate_inputs(self):
-        ok_button = self.mButtonBox.button(QDialogButtonBox.StandardButton.Ok)
+        try:
+            # Qt6-compatible button access
+            ok_button = self.mButtonBox.button(QDialogButtonBox.StandardButton.Ok)
+        except AttributeError:
+            # Fallback for Qt5
+            ok_button = self.mButtonBox.button(QDialogButtonBox.Ok)
+
         if not ok_button: return
         error_messages = []
         is_at_least_one_tab_active = False
