@@ -67,7 +67,6 @@ class ReneWDialog(QDialog, FORM_CLASS):
         # --- Connect signals ---
         self.tabs = []
         self._create_dynamic_tabs()
-        self._populate_municipality_filter()
         self.mCheckBoxEnableDimensionWeighting.toggled[bool].connect(self.mSpinBoxDimensionFactor.setEnabled)
         self.mBtnEditParameters.clicked.connect(self._open_parameter_editor)
         self.mTemporalGroupBox.toggled[bool].connect(self._validate_inputs)
@@ -77,19 +76,37 @@ class ReneWDialog(QDialog, FORM_CLASS):
         # --- Set initial validation state ---
         self._validate_inputs()
 
-    def _populate_municipality_filter(self):
-        """Populates the municipality filter combo box from parameters."""
+    def _update_municipality_filter(self):
+        """
+        Populates the municipality filter with unique values from the first
+        active layer that has a municipality field selected.
+        """
         self.mMunicipalityFilterCombo.clear()
         self.mMunicipalityFilterCombo.addItem(self.tr("All"), userData=None)
-        param_file = os.path.join(os.path.dirname(__file__), 'parameters.json')
-        try:
-            with open(param_file, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-            municipalities = config.get('municipalities', [])
-            for muni in municipalities:
-                self.mMunicipalityFilterCombo.addItem(muni.get('name'), userData=muni.get('code'))
-        except (IOError, json.JSONDecodeError):
-            pass
+
+        source_layer = None
+        muni_field = None
+
+        # Find the first active layer with a municipality field
+        for tab in self.tabs:
+            if tab['check'].isChecked():
+                layer = tab['layer_combo'].currentLayer()
+                field = tab['muni_combo'].currentField()
+                if layer and field:
+                    source_layer = layer
+                    muni_field = field
+                    break
+
+        if not source_layer or not muni_field:
+            self.mMunicipalityFilterCombo.setEnabled(False)
+            return
+
+        self.mMunicipalityFilterCombo.setEnabled(True)
+        idx = source_layer.fields().lookupField(muni_field)
+        if idx != -1:
+            unique_values = source_layer.uniqueValues(idx)
+            for value in sorted(list(unique_values)):
+                self.mMunicipalityFilterCombo.addItem(str(value), userData=value)
 
     def _create_dynamic_tabs(self):
         """Creates UI tabs dynamically based on the parameters.json file."""
@@ -129,12 +146,19 @@ class ReneWDialog(QDialog, FORM_CLASS):
             tab_data['layer_combo'].setFilters(QgsMapLayerProxyModel.VectorLayer)
             for combo_name in ['muni_combo', 'mat_combo', 'year_combo', 'dim_combo', 'reno_year_combo', 'reno_method_combo']:
                 tab_data['layer_combo'].layerChanged.connect(tab_data[combo_name].setLayer)
+
+            # Connect signals for validation and municipality filter update
             check.toggled[bool].connect(self._validate_inputs)
+            check.toggled[bool].connect(self._update_municipality_filter)
             tab_data['layer_combo'].layerChanged.connect(self._validate_inputs)
+            tab_data['layer_combo'].layerChanged.connect(self._update_municipality_filter)
+            tab_data['muni_combo'].fieldChanged.connect(self._update_municipality_filter)
             tab_data['mat_combo'].fieldChanged.connect(self._validate_inputs)
             tab_data['year_combo'].fieldChanged.connect(self._validate_inputs)
             tab_data['dim_combo'].fieldChanged.connect(self._validate_inputs)
             group.setEnabled(False)
+
+        self._update_municipality_filter() # Initial population
 
     def _open_parameter_editor(self):
         """Opens the parameter editor dialog."""
