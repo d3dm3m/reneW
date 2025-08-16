@@ -232,7 +232,7 @@ class ReneWDialog(QDialog, FORM_CLASS):
         project = QgsProject.instance()
         project.writeEntry('reneW', 'municipalityFilter', self.mMunicipalityFilterCombo.currentText())
         for tab in self.tabs:
-            prefix = f"tab_{tab['name']}"
+            prefix = f"tab_{tab['name'].replace('/', '_')}"
             project.writeEntryBool('reneW', f'{prefix}_enabled', tab['check'].isChecked())
             if tab['layer_combo'].currentLayer():
                 project.writeEntry('reneW', f'{prefix}_layer', tab['layer_combo'].currentLayer().id())
@@ -265,7 +265,7 @@ class ReneWDialog(QDialog, FORM_CLASS):
                 if layer:
                     combo.setLayer(layer)
         for tab in self.tabs:
-            prefix = f"tab_{tab['name']}"
+            prefix = f"tab_{tab['name'].replace('/', '_')}"
             tab['check'].setChecked(project.readBoolEntry('reneW', f'{prefix}_enabled', False)[0])
             set_layer_if_exists(tab['layer_combo'], project.readEntry('reneW', f'{prefix}_layer', '')[0])
             tab['muni_combo'].setField(project.readEntry('reneW', f'{prefix}_municipalityField', '')[0])

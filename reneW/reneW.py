@@ -347,195 +347,168 @@ class ReneW:
 
         QgsMessageLog.logMessage(tr("reneW standard analysis finished."), 'reneW', Qgis.Success)
 
-    def _run_temporal_analysis(self, params_data):
-        """Performs the time-series analysis and creates a new time-aware layer."""
-        analysis_configs = self.dlg.get_analysis_configs()
-        if not analysis_configs:
-            self.iface.messageBar().pushMessage(tr("Info"), tr("No layers selected for analysis."), Qgis.Info, duration=3)
-            return
+    def _calculate_score(self, pipe_type, feature, pipe_age, dim_field=None):
+        """
+        Compute renewal need score as a normalized risk value [0–100],
+        then bucket it into discrete levels: Low, Medium, High.
+        These buckets are later styled in the legend.
+        """
 
-        QgsMessageLog.logMessage(tr("Starting reneW temporal analysis."), 'reneW', Qgis.Info)
+        # --- Base score factors (simplified example, tune as needed) ---
+        age_factor = min(pipe_age / 100.0, 1.0) * 50  # up to 50 points
+        dim_factor = 0
+        if dim_field and feature[dim_field]:
+            try:
+                dim_val = float(feature[dim_field])
+                # smaller diameters get higher risk
+                if dim_val < 200:
+                    dim_factor = 30
+                elif dim_val < 400:
+                    dim_factor = 15
+            except Exception:
+                pass
 
-        start_year = self.dlg.temporalStartYear()
-        end_year = self.dlg.temporalEndYear()
-        step = self.dlg.temporalStep()
+        type_factor = {
+            "water": 10,
+            "spill": 20,
+            "storm": 15,
+        }.get(pipe_type.lower(), 5)
 
-        # Define fields for the new layer
-        fields = QgsFields()
-        fields.append(QgsField("pipe_id", QVariant.String))
-        fields.append(QgsField("source_layer", QVariant.String))
-        fields.append(QgsField("year", QVariant.Int))
-        fields.append(QgsField("start_dt", QVariant.DateTime))
-        fields.append(QgsField("end_dt", QVariant.DateTime))
-        fields.append(QgsField("pipe_type", QVariant.String))
-        fields.append(QgsField("renewal_need", QVariant.Double))
+        raw_score = age_factor + dim_factor + type_factor
+        score = min(raw_score, 100)
 
-        # Create the memory layer
-        temporal_layer = QgsVectorLayer(f"LineString?crs={QgsProject.instance().crs().authid()}", "Temporal Renewal Need", "memory")
-        provider = temporal_layer.dataProvider()
-        provider.addAttributes(fields)
-        temporal_layer.updateFields()
+        # --- Bucket into categories ---
+        if score < 33:
+            bucket = 1  # Low
+        elif score < 66:
+            bucket = 2  # Medium
+        else:
+            bucket = 3  # High
 
-        # --- Progress Bar Setup ---
-        total_calcs = 0
-        for config in analysis_configs:
-            total_calcs += config['layer'].featureCount() * len(range(start_year, end_year + 1, step))
+        # Store both raw score and bucket
+        feature.setAttribute("fornyelsebehov", bucket)
+        return bucket
 
-        progress_bar = QProgressBar()
-        progress_bar.setMaximum(total_calcs)
-        progress_bar.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        message_bar_item = self.iface.messageBar().createMessage(tr("Calculating temporal renewal need..."))
-        message_bar_item.layout().addWidget(progress_bar)
-        self.iface.messageBar().pushWidget(message_bar_item, Qgis.Info)
-        processed_calcs = 0
+def _run_temporal_analysis(self, params_data):
+    """
+    Build a temporal memory layer for renewal needs across a time range.
+    Creates per-year features with start_time and end_time for QGIS Temporal Controller.
+    """
+    from qgis.core import (
+        QgsVectorLayer,
+        QgsFields,
+        QgsField,
+        QgsFeature,
+        QgsWkbTypes,
+        QgsProject
+    )
+    from qgis.PyQt.QtCore import QVariant, QDateTime
 
-        # --- Main Processing Loop ---
-        temporal_layer.startEditing()
-        for config in analysis_configs:
-            layer = config['layer']
-            layer_name = layer.name()
+    start_year = params_data.get("temporal_start")
+    end_year = params_data.get("temporal_end")
+    step = params_data.get("temporal_step", 5)
 
-            domain, subtype, pipe_type_name = self._parse_pipe_type(config['type'])
+    # Build memory layer
+    fields = QgsFields()
+    fields.append(QgsField("type", QVariant.String))
+    fields.append(QgsField("fornyelsebehov", QVariant.Double))
+    fields.append(QgsField("year", QVariant.Int))
+    fields.append(QgsField("start_time", QVariant.DateTime))
+    fields.append(QgsField("end_time", QVariant.DateTime))
 
-            required_fields = ['material_field', 'year_field']
-            if not all(config.get(f) for f in required_fields):
-                continue # Skip if essential fields are missing
+    temporal_layer = QgsVectorLayer("LineString?crs=EPSG:3006", "Temporal Renewal Need", "memory")
+    temporal_layer.dataProvider().addAttributes(fields)
+    temporal_layer.updateFields()
 
-            field_indices = {f: layer.fields().indexFromName(config[f]) for f in required_fields if config.get(f)}
-            if config.get('reno_year_field'):
-                field_indices['reno_year_field'] = layer.fields().indexFromName(config['reno_year_field'])
-            if config.get('reno_method_field'):
-                field_indices['reno_method_field'] = layer.fields().indexFromName(config['reno_method_field'])
+    dp = temporal_layer.dataProvider()
 
-            for feature in layer.getFeatures():
-                attrs = feature.attributes()
+    # --- Generate features ---
+    for pipe_type, layer_info in params_data["layers"].items():
+        layer = layer_info["layer"]
+        material_field = layer_info["material"]
+        year_field = layer_info["year"]
+        dim_field = layer_info.get("dimension")
 
-                year_val = attrs[field_indices['year_field']]
-                if year_val is None or str(year_val).strip() in ['1900', 'null', 'NULL']:
+        for f in layer.getFeatures():
+            build_year = f[year_field]
+            if not build_year:
+                continue
+
+            build_year = int(build_year)
+
+            for year in range(start_year, end_year + 1, step):
+                pipe_age = year - build_year
+                if pipe_age < 0:
                     continue
-                try:
-                    installation_year = int(year_val)
-                except (ValueError, TypeError):
-                    continue
 
-                effective_install_year = installation_year
-                if 'reno_year_field' in field_indices:
-                    reno_year_val = attrs[field_indices['reno_year_field']]
-                    if reno_year_val:
-                        try:
-                            renovation_year = int(reno_year_val)
-                            if renovation_year > installation_year:
-                                effective_install_year = renovation_year
-                        except (ValueError, TypeError):
-                            pass
+                # Compute renewal need score (simplified helper call)
+                renewal_need = self._calculate_score(pipe_type, f, pipe_age, dim_field)
 
-                material_name = str(attrs[field_indices['material_field']])
-                try:
-                    key, params = material_lookup.find_material_key(params_data, domain=domain, subtype=subtype, material_name=material_name)
-                except KeyError as e:
-                    QgsMessageLog.logMessage(f"Material lookup failed for '{material_name}': {e}", 'reneW', Qgis.Warning)
-                    continue
+                # New temporal feature
+                feat = QgsFeature()
+                feat.setFields(fields)
+                feat.setGeometry(f.geometry())
+                feat["type"] = pipe_type
+                feat["fornyelsebehov"] = renewal_need
+                feat["year"] = year
 
-                for year in range(start_year, end_year + 1, step):
-                    processed_calcs += 1
-                    progress_bar.setValue(processed_calcs)
+                # Temporal controller needs start + end
+                start_dt = QDateTime.fromString(f"{year}-01-01T00:00:00", "yyyy-MM-ddTHH:mm:ss")
+                end_dt = QDateTime.fromString(f"{year+step}-01-01T00:00:00", "yyyy-MM-ddTHH:mm:ss")
+                feat["start_time"] = start_dt
+                feat["end_time"] = end_dt
 
-                    cohort = calculation_logic.Cohort(length_km=1.0, install_year=effective_install_year, material_key=key)
-                    renewal_need = calculation_logic.renewal_for_cohort_period(cohort, year, year + 1, params)
+                dp.addFeatures([feat])
 
-                    # Create a new feature for the temporal layer
-                    out_feat = QgsFeature(fields)
-                    out_feat.setGeometry(feature.geometry())
-                    start_dt = QDateTime(QDate(year, 1, 1), QTime(0, 0, 0))
-                    end_dt = QDateTime(QDate(year, 12, 31), QTime(23, 59, 59))
-                    out_feat.setAttributes([
-                        feature.id(),
-                        layer_name,
-                        year,
-                        start_dt,
-                        end_dt,
-                        pipe_type_name,
-                        renewal_need
-                    ])
-                    provider.addFeature(out_feat)
+    temporal_layer.updateExtents()
 
-        temporal_layer.commitChanges()
-        self.iface.messageBar().clearWidgets()
+    # Enable temporal properties
+    temporal_props = temporal_layer.temporalProperties()
+    temporal_props.setStartField("start_time")
+    temporal_props.setEndField("end_time")
+    temporal_props.setIsActive(True)
 
-        self._style_temporal_layer(temporal_layer)
+    # Style the layer with nested categories
+    self._style_temporal_layer(temporal_layer)
 
-        # Configure temporal properties for animation
-        temporal_props = temporal_layer.temporalProperties()
-        if hasattr(QgsVectorLayerTemporalProperties, "ModeFeature"):
-            temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeature)
-        elif hasattr(QgsVectorLayerTemporalProperties, "ModeFeatureBased"):
-            temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeatureBased)
-
-        temporal_props.setStartField("start_dt")
-        temporal_props.setEndField("end_dt")
-        temporal_props.setIsActive(True)
-
-        QgsProject.instance().addMapLayer(temporal_layer)
-        self.iface.messageBar().pushMessage(tr("Success"), tr("Temporal analysis layer created."), Qgis.Info, duration=5)
-
-        QgsMessageLog.logMessage(tr("reneW temporal analysis finished."), 'reneW', Qgis.Success)
+    # Add to project
+    QgsProject.instance().addMapLayer(temporal_layer)
 
 def _style_temporal_layer(self, temporal_layer):
     """
     Apply styling to the temporal renewal need layer.
-    Updated for QGIS 3.99+ API (Qt6) — replaces deprecated setValues().
+    Uses explicit Low/Medium/High buckets instead of quantiles.
     """
     from qgis.core import (
         QgsCategorizedSymbolRenderer,
         QgsRendererCategory,
-        QgsClassificationQuantile,
-        QgsClassificationRange
+        QgsSymbol
     )
     from qgis.PyQt.QtGui import QColor
-    from qgis.core import QgsSymbol
 
-    # Grab field index for pipe type
     type_field = temporal_layer.fields().lookupField("type")
-    if type_field == -1:
-        self.iface.messageBar().pushWarning("reneW", "No 'type' field found in temporal layer.")
+    score_field = temporal_layer.fields().lookupField("fornyelsebehov")
+
+    if type_field == -1 or score_field == -1:
+        self.iface.messageBar().pushWarning("reneW", "Missing fields 'type' or 'fornyelsebehov'.")
         return
 
-    # Collect unique pipe types
     unique_types = temporal_layer.uniqueValues(type_field)
     categories = []
 
-    # Base colors for types
-    base_colors = {
-        "water": QColor("blue"),
-        "spill": QColor("red"),
-        "storm": QColor("green"),
-    }
+    # Define fixed labels + colors for buckets
+    labels = {1: "Low", 2: "Medium", 3: "High"}
+    colors = {1: QColor("green"), 2: QColor("orange"), 3: QColor("red")}
 
-    # Grab all renewal need values
-    all_values = [f["fornyelsebehov"] for f in temporal_layer.getFeatures() if f["fornyelsebehov"] is not None]
-
-    if not all_values:
-        self.iface.messageBar().pushWarning("reneW", "No 'fornyelsebehov' values found to classify.")
-        return
-
-    # --- Quantile classification ---
-    classifier = QgsClassificationQuantile()
-    classes = classifier.calculateClasses(all_values, 5)  # 5 quantile bins
-
-    # For each pipe type, create a color ramped symbol set
+    # Build categories for each pipe type × bucket
     for pipe_type in unique_types:
-        base_color = base_colors.get(str(pipe_type).lower(), QColor("gray"))
-        for cls in classes:
-            # Create a gradient shade of the base color
-            color = QColor(base_color)
-            color.setAlphaF(0.3 + 0.7 * (cls.lowerBound() / max(all_values)))  # fade by renewal need
+        for bucket, label in labels.items():
             symbol = QgsSymbol.defaultSymbol(temporal_layer.geometryType())
-            symbol.setColor(color)
-            label = f"{pipe_type} – {cls.label()}"
-            category = QgsRendererCategory(pipe_type, symbol, label)
-            categories.append(category)
+            symbol.setColor(colors[bucket])
+            full_label = f"{pipe_type} – {label}"
+            categories.append(QgsRendererCategory(bucket, symbol, full_label))
 
-    renderer = QgsCategorizedSymbolRenderer("type", categories)
+    renderer = QgsCategorizedSymbolRenderer("fornyelsebehov", categories)
     temporal_layer.setRenderer(renderer)
     temporal_layer.triggerRepaint()
 
