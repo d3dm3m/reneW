@@ -48,6 +48,7 @@ class ReneWDialog(QDialog, FORM_CLASS):
         self.mTemporalStartYearSpinBox = QSpinBox()
         self.mTemporalEndYearSpinBox = QSpinBox()
         self.mTemporalStepSpinBox = QSpinBox()
+        self.mNumClassesSpinBox = QSpinBox()
         current_year = datetime.now().year
         self.mTemporalStartYearSpinBox.setRange(current_year - 10, current_year + 100)
         self.mTemporalStartYearSpinBox.setValue(current_year)
@@ -55,12 +56,16 @@ class ReneWDialog(QDialog, FORM_CLASS):
         self.mTemporalEndYearSpinBox.setValue(current_year + 40)
         self.mTemporalStepSpinBox.setRange(1, 20)
         self.mTemporalStepSpinBox.setValue(5)
+        self.mNumClassesSpinBox.setRange(3, 9)
+        self.mNumClassesSpinBox.setValue(5)
         temporal_layout.addWidget(QLabel(self.tr("Start Year:")), 0, 0)
         temporal_layout.addWidget(self.mTemporalStartYearSpinBox, 0, 1)
         temporal_layout.addWidget(QLabel(self.tr("End Year:")), 0, 2)
         temporal_layout.addWidget(self.mTemporalEndYearSpinBox, 0, 3)
-        temporal_layout.addWidget(QLabel(self.tr("Step (Years):")), 0, 4)
-        temporal_layout.addWidget(self.mTemporalStepSpinBox, 0, 5)
+        temporal_layout.addWidget(QLabel(self.tr("Step (Years):")), 1, 0)
+        temporal_layout.addWidget(self.mTemporalStepSpinBox, 1, 1)
+        temporal_layout.addWidget(QLabel(self.tr("Number of Color Classes:")), 1, 2)
+        temporal_layout.addWidget(self.mNumClassesSpinBox, 1, 3)
         # Add the new groupbox to the main layout before the vertical spacer
         self.verticalLayout_2.insertWidget(self.verticalLayout_2.count() - 3, self.mTemporalGroupBox)
 
@@ -196,6 +201,9 @@ class ReneWDialog(QDialog, FORM_CLASS):
     def temporalStep(self) -> int:
         return self.mTemporalStepSpinBox.value()
 
+    def numColorClasses(self) -> int:
+        return self.mNumClassesSpinBox.value()
+
     def get_selected_municipality_code(self):
         return self.mMunicipalityFilterCombo.currentData()
 
@@ -281,6 +289,7 @@ class ReneWDialog(QDialog, FORM_CLASS):
         project.writeEntry('reneW', 'temporalStartYear', self.temporalStartYear())
         project.writeEntry('reneW', 'temporalEndYear', self.temporalEndYear())
         project.writeEntry('reneW', 'temporalStep', self.temporalStep())
+        project.writeEntry('reneW', 'numColorClasses', self.numColorClasses())
 
     def load_settings(self):
         project = QgsProject.instance()
@@ -313,3 +322,4 @@ class ReneWDialog(QDialog, FORM_CLASS):
         self.mTemporalStartYearSpinBox.setValue(project.readNumEntry('reneW', 'temporalStartYear', datetime.now().year)[0])
         self.mTemporalEndYearSpinBox.setValue(project.readNumEntry('reneW', 'temporalEndYear', datetime.now().year + 40)[0])
         self.mTemporalStepSpinBox.setValue(project.readNumEntry('reneW', 'temporalStep', 5)[0])
+        self.mNumClassesSpinBox.setValue(project.readNumEntry('reneW', 'numColorClasses', 5)[0])

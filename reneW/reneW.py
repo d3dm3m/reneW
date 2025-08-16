@@ -209,6 +209,7 @@ class ReneW:
         if result:
             self.dlg.save_settings()
             if self.dlg.useTemporalAnalysis():
+                params_data['num_classes'] = self.dlg.numColorClasses()
                 self._run_temporal_analysis(params_data)
             else:
                 self._run_standard_analysis(params_data)
@@ -584,7 +585,7 @@ class ReneW:
         self._configure_temporal_properties(temporal_layer)
 
         # Apply styling
-        self._style_temporal_layer(temporal_layer)
+        self._style_temporal_layer(temporal_layer, params_data.get('num_classes', 5))
 
         # Add to project
         QgsProject.instance().addMapLayer(temporal_layer)
@@ -620,27 +621,20 @@ class ReneW:
         temporal_props.setEndField("end_time")
         temporal_props.setIsActive(True)
 
-    def _style_temporal_layer(self, layer):
-        """Apply rule-based styling to the temporal layer."""
-        # Create root rule
+    def _style_temporal_layer(self, layer, num_classes=5):
+        """Apply graduated styling by pipe type and renewal need."""
         root_symbol = QgsSymbol.defaultSymbol(layer.geometryType())
         root_rule = QgsRuleBasedRenderer.Rule(root_symbol)
 
-        # Create renderer
-        try:
-            renderer = QgsRuleBasedRenderer(root_rule)
-        except TypeError:
-            if hasattr(QgsRuleBasedRenderer, "create"):
-                renderer = QgsRuleBasedRenderer.create(root_rule)
+        renderer = QgsRuleBasedRenderer(root_rule)
 
-        # Define color palettes for different pipe types
+        # Define color ramps for each pipe type
         palettes = {
-            'water': ['#e5f5f9', '#99d8c9', '#2ca25f'],
-            'sewer': ['#fee5d9', '#fcae91', '#de2d26'],
-            'stormwater': ['#e5f5e0', '#a1d99b', '#31a354']
+            'water': ('#deebf7', '#08519c'),       # light blue → dark blue
+            'sewer': ('#fee5d9', '#a50f15'),       # light red → dark red
+            'stormwater': ('#e5f5e0', '#006d2c')   # light green → dark green
         }
 
-        # Get unique pipe types and create rules
         pipe_types = set()
         pipe_type_idx = layer.fields().indexFromName("pipe_type")
 
@@ -648,43 +642,33 @@ class ReneW:
             for feature in layer.getFeatures():
                 pipe_type = feature.attributes()[pipe_type_idx]
                 if pipe_type:
-                    pipe_types.add(str(pipe_type))
+                    pipe_types.add(str(pipe_type).lower())
 
-        # Create rules for each pipe type with renewal need categories
         for pipe_type in sorted(pipe_types):
-            colors = palettes.get(pipe_type.lower(), ['#f0f0f0', '#bdbdbd', '#636363'])
+            if pipe_type not in palettes:
+                continue
 
-            # Low renewal need (0-0.33)
-            low_symbol = QgsSymbol.defaultSymbol(layer.geometryType())
-            low_symbol.setColor(QColor(colors[0]))
-            low_rule = QgsRuleBasedRenderer.Rule(
-                low_symbol,
-                filterExp=f'"pipe_type" = \'{pipe_type}\' AND "renewal_need" <= 0.33',
-                label=f'{pipe_type} - Low Risk'
-            )
-            root_rule.appendChild(low_rule)
+            color1, color2 = palettes[pipe_type]
 
-            # Medium renewal need (0.33-0.66)
-            med_symbol = QgsSymbol.defaultSymbol(layer.geometryType())
-            med_symbol.setColor(QColor(colors[1]))
-            med_rule = QgsRuleBasedRenderer.Rule(
-                med_symbol,
-                filterExp=f'"pipe_type" = \'{pipe_type}\' AND "renewal_need" > 0.33 AND "renewal_need" <= 0.66',
-                label=f'{pipe_type} - Medium Risk'
-            )
-            root_rule.appendChild(med_rule)
+            # Build graduated renderer ranges
+            step = 1.0 / num_classes
+            for i in range(num_classes):
+                lower = i * step
+                upper = (i + 1) * step if i < num_classes - 1 else 1.0
+                symbol = QgsSymbol.defaultSymbol(layer.geometryType())
+                # Interpolate color between color1 and color2
+                r = QColor(color1).redF() + (QColor(color2).redF() - QColor(color1).redF()) * (i / (num_classes - 1))
+                g = QColor(color1).greenF() + (QColor(color2).greenF() - QColor(color1).greenF()) * (i / (num_classes - 1))
+                b = QColor(color1).blueF() + (QColor(color2).blueF() - QColor(color1).blueF()) * (i / (num_classes - 1))
+                symbol.setColor(QColor.fromRgbF(r, g, b))
 
-            # High renewal need (>0.66)
-            high_symbol = QgsSymbol.defaultSymbol(layer.geometryType())
-            high_symbol.setColor(QColor(colors[2]))
-            high_rule = QgsRuleBasedRenderer.Rule(
-                high_symbol,
-                filterExp=f'"pipe_type" = \'{pipe_type}\' AND "renewal_need" > 0.66',
-                label=f'{pipe_type} - High Risk'
-            )
-            root_rule.appendChild(high_rule)
+                rng = QgsRuleBasedRenderer.Rule(
+                    symbol,
+                    filterExp=f'"pipe_type" = \'{pipe_type}\' AND "renewal_need" > {lower} AND "renewal_need" <= {upper}',
+                    label=f'{pipe_type.capitalize()} {int(lower*100)}–{int(upper*100)}%'
+                )
+                root_rule.appendChild(rng)
 
-        # Remove the default root rule if it has children
         if root_rule.children():
             try:
                 root_rule.removeChildAt(0)
