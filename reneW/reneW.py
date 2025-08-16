@@ -25,7 +25,8 @@ from qgis.core import (
     QgsGraduatedSymbolRenderer,
     QgsRendererRange,
     QgsRuleBasedRenderer,
-    QgsStyle
+    QgsStyle,
+    QgsClassificationQuantile
 )
 
 # Import the code for the dialog and the calculation logic
@@ -501,16 +502,26 @@ class ReneW:
         # Fallback palette (greyscale)
         fallback_colors = ['#f7f7f7', '#cccccc', '#969696', '#636363', '#252525']
 
-        # Graduated ranges
-        range_data = [
-            (0.0, 0.2, 'Very Low Need (0.0 – 0.2)'),
-            (0.2, 0.4, 'Low Need (0.2 – 0.4)'),
-            (0.4, 0.6, 'Medium Need (0.4 – 0.6)'),
-            (0.6, 0.8, 'High Need (0.6 – 0.8)'),
-            (0.8, 1.01, 'Very High Need (0.8 – 1.0)')
-        ]
+        # --- 4. Get all renewal_need values to create a data-driven classification ---
+        all_values = [f['renewal_need'] for f in layer.getFeatures() if f['renewal_need'] is not None and f['renewal_need'] > 0]
 
-        # --- 4. Get distinct pipe_type values from the layer ---
+        range_data = []
+        if all_values:
+            classifier = QgsClassificationQuantile()
+            classifier.setValues(all_values)
+            classifier.setNumberOfClasses(5)
+            ranges = classifier.ranges()
+            # Add descriptive labels to the ranges
+            labels = ['Very Low Need', 'Low Need', 'Medium Need', 'High Need', 'Very High Need']
+            for i, r in enumerate(ranges):
+                label_text = labels[i] if i < len(labels) else ''
+                label = f'{label_text} ({r.lowerValue():.3f} – {r.upperValue():.3f})'
+                range_data.append((r.lowerValue(), r.upperValue(), label))
+
+        if not range_data: # Fallback if there are no positive values
+            range_data = [(0.0, 1.01, 'No renewal need')]
+
+        # --- 5. Get distinct pipe_type values from the layer ---
         pipe_types = set()
         idx = layer.fields().indexFromName("pipe_type")
         if idx != -1:

@@ -1,10 +1,7 @@
 import os
 import json
 from datetime import datetime
-from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import (QDialog, QDialogButtonBox, QWidget, QVBoxLayout,
-                                 QCheckBox, QGroupBox, QGridLayout, QLabel,
-                                 QFormLayout, QDoubleSpinBox, QSpinBox)
+from qgis.PyQt.QtWidgets import QDialog, QDialogButtonBox, QWidget, QVBoxLayout, QCheckBox, QGroupBox, QGridLayout, QLabel, QFormLayout, QDoubleSpinBox, QSpinBox
 from qgis.core import QgsMapLayerProxyModel, QgsProject, QgsVectorLayer
 from qgis.gui import QgsFieldComboBox, QgsMapLayerComboBox
 from .parameter_editor_dialog import ParameterEditorDialog
@@ -27,7 +24,7 @@ class ReneWDialog(QDialog, FORM_CLASS):
         self.mSpinBoxHotspotThreshold = QDoubleSpinBox()
         self.mSpinBoxHotspotRadius = QSpinBox()
         self.mSpinBoxHotspotThreshold.setDecimals(2)
-        self.mSpinBoxHotspotThreshold.setSingleStep(0.1)
+        self.mSpinBoxHotspotThreshold.setSingleStep(0.01)
         self.mSpinBoxHotspotThreshold.setRange(0.0, 1.0)
         self.mSpinBoxHotspotThreshold.setValue(0.75)
         self.mSpinBoxHotspotRadius.setRange(1, 1000)
