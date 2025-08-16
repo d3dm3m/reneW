@@ -50,6 +50,12 @@ def get_alignment():
     except AttributeError:
         return Qt.AlignLeft | Qt.AlignVCenter
 
+def get_iso_format():
+    try:
+        return Qt.DateFormat.ISODate  # Qt6+
+    except AttributeError:
+        return Qt.ISODate  # Qt5 fallback
+
 class ReneW:
     """QGIS Plugin Implementation."""
 
@@ -543,8 +549,8 @@ class ReneW:
                     out_feat.setGeometry(feature.geometry())
 
                     # Create datetime objects for temporal controller
-                    start_datetime = QDateTime.fromString(f"{year}-01-01T00:00:00", Qt.ISODate)
-                    end_datetime = QDateTime.fromString(f"{year + step}-01-01T00:00:00", Qt.ISODate)
+                    start_datetime = QDateTime.fromString(f"{year}-01-01T00:00:00", get_iso_format())
+                    end_datetime = QDateTime.fromString(f"{year + step}-01-01T00:00:00", get_iso_format())
 
                     out_feat.setAttributes([
                         str(feature.id()),
