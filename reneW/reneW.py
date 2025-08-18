@@ -314,7 +314,19 @@ class ReneW:
                         except (ValueError, TypeError):
                             pass
 
+                if domain == "water":
+                    optimism_factor = self.dlg.waterOptimismFactor()
+                elif domain == "sewer" and subtype == "spill":
+                    optimism_factor = self.dlg.wastewaterOptimismFactor()
+                elif domain == "sewer" and subtype == "storm":
+                    optimism_factor = self.dlg.stormwaterOptimismFactor()
+                else:
+                    optimism_factor = 1.0  # fallback
+
                 age = max(0, current_year - effective_install_year)
+                adjusted_age = age / optimism_factor
+                adjusted_install_year = current_year - int(adjusted_age)
+
                 material_name = attrs[field_indices['material_field']]
                 try:
                     key, params = material_lookup.find_material_key(
@@ -346,7 +358,7 @@ class ReneW:
                             material_name = f"{material_name} (Lined: {reno_method_str})"
 
                 cohort = calculation_logic.Cohort(
-                    length_km=1.0, install_year=effective_install_year, material_key=key
+                    length_km=1.0, install_year=adjusted_install_year, material_key=key
                 )
                 renewal_need = calculation_logic.renewal_for_cohort_period(
                     cohort, current_year, current_year + 1, params
@@ -368,7 +380,8 @@ class ReneW:
                         'pipe_type': friendly_pipe,
                         'material': material_name,
                         'age': age,
-                        'renewal_need': renewal_need
+                        'renewal_need': renewal_need,
+                        'optimism_factor': optimism_factor
                     })
 
             if layer.commitChanges():
@@ -452,6 +465,7 @@ class ReneW:
         fields.append(QgsField("material", QVariant.String))
         fields.append(QgsField("dimension", QVariant.Double))
         fields.append(QgsField("age", QVariant.Int))
+        fields.append(QgsField("optimism_factor", QVariant.Double))
 
         # Create the memory layer
         temporal_layer = QgsVectorLayer(
@@ -524,6 +538,15 @@ class ReneW:
                         except (ValueError, TypeError):
                             pass
 
+                if domain == "water":
+                    optimism_factor = self.dlg.waterOptimismFactor()
+                elif domain == "sewer" and subtype == "spill":
+                    optimism_factor = self.dlg.wastewaterOptimismFactor()
+                elif domain == "sewer" and subtype == "storm":
+                    optimism_factor = self.dlg.stormwaterOptimismFactor()
+                else:
+                    optimism_factor = 1.0
+
                 material_name = str(attrs[field_indices['material_field']])
                 try:
                     key, params = material_lookup.find_material_key(
@@ -540,9 +563,13 @@ class ReneW:
                     processed_calcs += 1
                     progress_bar.setValue(processed_calcs)
 
+                    age = max(0, year - effective_install_year)
+                    adjusted_age = age / optimism_factor
+                    adjusted_install_year = year - int(adjusted_age)
+
                     cohort = calculation_logic.Cohort(
                         length_km=1.0,
-                        install_year=effective_install_year,
+                        install_year=adjusted_install_year,
                         material_key=key
                     )
                     renewal_need = calculation_logic.cumulative_failure_probability(
@@ -573,7 +600,8 @@ class ReneW:
                         end_datetime,
                         material_val,
                         dimension_val,
-                        age_val
+                        age_val,
+                        optimism_factor
                     ])
                     provider.addFeature(out_feat)
 

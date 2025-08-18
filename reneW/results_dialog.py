@@ -25,26 +25,25 @@ class ResultsDialog(QDialog, FORM_CLASS):
 
     def populate_table(self, results):
         """Populate the results table with high-risk features."""
-
-        headers = ["Layer", "Pipe Type", "Material", "Age", "Renewal Need"]
-        self.resultsTable.setColumnCount(len(headers))
-        self.resultsTable.setHorizontalHeaderLabels(headers)
-        self.resultsTable.setRowCount(len(results))
+        self.resultsTable.setColumnCount(8)
+        self.resultsTable.setHorizontalHeaderLabels([
+            "Layer", "Pipe Type", "Material", "Age",
+            "Renewal Need", "Optimism Factor", "Feature ID", "Layer ID"
+        ])
+        self.resultsTable.setRowCount(0) # Clear the table
 
         for row_idx, result in enumerate(results):
-            row = [
-                result.get('layer_name', ''),
-                result.get('pipe_type', ''),  # now shows friendly label
-                result.get('material', ''),
-                str(result.get('age', '')),
-                f"{result.get('renewal_need', 0.0):.3f}"
-            ]
-            for col_idx, value in enumerate(row):
-                item = QTableWidgetItem(value)
-                self.resultsTable.setItem(row_idx, col_idx, item)
+            self.resultsTable.insertRow(row_idx)
+            self.resultsTable.setItem(row_idx, 0, QTableWidgetItem(result.get('layer_name', '')))
+            self.resultsTable.setItem(row_idx, 1, QTableWidgetItem(result.get('pipe_type', '')))
+            self.resultsTable.setItem(row_idx, 2, QTableWidgetItem(result.get('material', '')))
+            self.resultsTable.setItem(row_idx, 3, QTableWidgetItem(str(result.get('age', ''))))
+            self.resultsTable.setItem(row_idx, 4, QTableWidgetItem(f"{result.get('renewal_need', 0.0):.2f}"))
+            self.resultsTable.setItem(row_idx, 5, QTableWidgetItem(f"{result.get('optimism_factor', 1.0):.2f}"))
+            self.resultsTable.setItem(row_idx, 6, QTableWidgetItem(str(result.get('feature_id', ''))))
+            self.resultsTable.setItem(row_idx, 7, QTableWidgetItem(str(result.get('layer_id', ''))))
 
-            # Store layer/feature IDs for zoom
-            self.resultsTable.setRowHeight(row_idx, 20)
+            # Store layer/feature IDs for zoom on the first item
             self.resultsTable.item(row_idx, 0).setData(1000, result.get('layer_id'))
             self.resultsTable.item(row_idx, 0).setData(1001, result.get('feature_id'))
 

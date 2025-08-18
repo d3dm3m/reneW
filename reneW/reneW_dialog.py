@@ -2,6 +2,7 @@ import os
 import json
 from datetime import datetime
 from qgis.PyQt.QtWidgets import QDialog, QDialogButtonBox, QWidget, QVBoxLayout, QCheckBox, QGroupBox, QGridLayout, QLabel, QFormLayout, QDoubleSpinBox, QSpinBox
+from qgis.PyQt.QtCore import QSettings
 from qgis.PyQt import uic
 from qgis.core import QgsMapLayerProxyModel, QgsProject, QgsVectorLayer
 from qgis.gui import QgsFieldComboBox, QgsMapLayerComboBox
@@ -39,6 +40,38 @@ class ReneWDialog(QDialog, FORM_CLASS):
         self.mCheckBoxEnableHotspot.toggled[bool].connect(self.mSpinBoxHotspotRadius.setEnabled)
         self.mSpinBoxHotspotThreshold.setEnabled(False)
         self.mSpinBoxHotspotRadius.setEnabled(False)
+
+        # --- Optimism Factors Group ---
+        optimism_group = QGroupBox("Optimism Factors")
+        optimism_layout = QGridLayout()
+
+        # Water factor
+        self.water_factor_spinbox = QDoubleSpinBox()
+        self.water_factor_spinbox.setRange(0.5, 1.5)
+        self.water_factor_spinbox.setSingleStep(0.1)
+        self.water_factor_spinbox.setValue(1.0)
+        optimism_layout.addWidget(QLabel("Water:"), 0, 0)
+        optimism_layout.addWidget(self.water_factor_spinbox, 0, 1)
+
+        # Wastewater factor
+        self.wastewater_factor_spinbox = QDoubleSpinBox()
+        self.wastewater_factor_spinbox.setRange(0.5, 1.5)
+        self.wastewater_factor_spinbox.setSingleStep(0.1)
+        self.wastewater_factor_spinbox.setValue(1.0)
+        optimism_layout.addWidget(QLabel("Wastewater:"), 1, 0)
+        optimism_layout.addWidget(self.wastewater_factor_spinbox, 1, 1)
+
+        # Stormwater factor
+        self.stormwater_factor_spinbox = QDoubleSpinBox()
+        self.stormwater_factor_spinbox.setRange(0.5, 1.5)
+        self.stormwater_factor_spinbox.setSingleStep(0.1)
+        self.stormwater_factor_spinbox.setValue(1.0)
+        optimism_layout.addWidget(QLabel("Stormwater:"), 2, 0)
+        optimism_layout.addWidget(self.stormwater_factor_spinbox, 2, 1)
+
+        optimism_group.setLayout(optimism_layout)
+        self.groupBox.layout().addWidget(optimism_group)
+
 
         # --- Programmatically add Temporal Analysis controls ---
         self.mTemporalGroupBox = QGroupBox(self.tr("Temporal Analysis"))
@@ -204,6 +237,15 @@ class ReneWDialog(QDialog, FORM_CLASS):
     def numColorClasses(self) -> int:
         return self.mNumClassesSpinBox.value()
 
+    def waterOptimismFactor(self) -> float:
+        return self.water_factor_spinbox.value()
+
+    def wastewaterOptimismFactor(self) -> float:
+        return self.wastewater_factor_spinbox.value()
+
+    def stormwaterOptimismFactor(self) -> float:
+        return self.stormwater_factor_spinbox.value()
+
     def get_selected_municipality_code(self):
         return self.mMunicipalityFilterCombo.currentData()
 
@@ -297,6 +339,12 @@ class ReneWDialog(QDialog, FORM_CLASS):
         project.writeEntry('reneW', 'temporalStep', self.temporalStep())
         project.writeEntry('reneW', 'numColorClasses', self.numColorClasses())
 
+        settings = QSettings()
+        settings.setValue("reneW/water_factor", self.water_factor_spinbox.value())
+        settings.setValue("reneW/wastewater_factor", self.wastewater_factor_spinbox.value())
+        settings.setValue("reneW/stormwater_factor", self.stormwater_factor_spinbox.value())
+
+
     def load_settings(self):
         project = QgsProject.instance()
         saved_municipality = project.readEntry('reneW', 'municipalityFilter', '')[0]
@@ -329,3 +377,8 @@ class ReneWDialog(QDialog, FORM_CLASS):
         self.mTemporalEndYearSpinBox.setValue(project.readNumEntry('reneW', 'temporalEndYear', datetime.now().year + 40)[0])
         self.mTemporalStepSpinBox.setValue(project.readNumEntry('reneW', 'temporalStep', 5)[0])
         self.mNumClassesSpinBox.setValue(project.readNumEntry('reneW', 'numColorClasses', 5)[0])
+
+        settings = QSettings()
+        self.water_factor_spinbox.setValue(settings.value("reneW/water_factor", 1.0, type=float))
+        self.wastewater_factor_spinbox.setValue(settings.value("reneW/wastewater_factor", 1.0, type=float))
+        self.stormwater_factor_spinbox.setValue(settings.value("reneW/stormwater_factor", 1.0, type=float))
