@@ -6,12 +6,14 @@
 
 *   Calculates a **renewal need** score for each pipe based on a statistical failure model.
 *   Uses a **Normal Distribution CDF model** based on pipe type (water/sewer), material, and age.
+*   **Auto-Detect Layers and Fields**: Automatically scans your project and suggests the best layers and fields for the analysis, significantly speeding up the setup process.
+*   **Per-Pipe-Type Optimism Factors**: Allows you to set individual optimism factors for Water, Wastewater, and Stormwater pipes to fine-tune the life expectancy assumptions.
 *   Includes an **optional and adjustable weighting factor** for pipe dimension to account for consequence of failure.
+*   **Hotspot Analysis**: Identifies geographic clusters of high-risk pipes.
+*   **Interactive Hotspot Explorer**: A tool to click on hotspots and see detailed statistics, a list of contributing pipes, and suggested interventions.
+*   **Temporal Analysis:** Generates a time-aware layer to animate how renewal needs change over a user-defined period, fully integrated with the QGIS Temporal Controller.
 *   Features a **Parameter Editor** to customize the underlying statistical model.
 *   Supports **filtering by municipality**.
-*   User-friendly dialog to select layers and map the necessary attributes.
-*   Adds the calculated score to a new field (`fornyelsebehov`) in your data.
-*   **Temporal Analysis:** Generates a time-aware layer to animate how renewal needs change over a user-defined period, fully integrated with the QGIS Temporal Controller.
 *   UI available in English and Swedish.
 
 ## Compatibility
@@ -30,116 +32,57 @@ You should now see the `reneW` icon in the QGIS toolbar.
 ## Usage
 
 1.  **Launch the Plugin:** Click on the `reneW` icon.
-2.  **Configure Analysis:** The main dialog has three tabs: `water`, `sewer/spill`, and `sewer/storm`.
+2.  **Auto-Detect (Recommended):** Click the **Auto-Detect** button. The plugin will scan the layers in your project and attempt to automatically select the correct layer and fields for each pipe type tab (Water, Sewer, Stormwater). This is based on a scoring system that analyzes layer and field names.
+3.  **Configure Analysis:** Review the auto-detected settings or configure them manually. The main dialog has three tabs: `water`, `sewer`, and `stormwater`.
     *   For each pipe type you want to analyze, check the box.
     *   Select the corresponding **Layer**.
     *   Map the required fields: **Material**, **Construction year**, and **Dimension**.
     *   Optionally, map fields for **Municipality**, **Renovation year**, and **Renovation method**.
-3.  **Run:** Click `OK`. A new field `fornyelsebehov` will be added to your layer(s). You can use this field to style the layer to visually identify high-risk pipes.
+4.  **Set Advanced Options (General Settings Tab):**
+    *   **Optimism Factors**: Adjust the life expectancy assumptions for each pipe type. A factor > 1.0 means you are optimistic (pipes last longer), while a factor < 1.0 means you are pessimistic (pipes age faster).
+    *   **Dimension Weighting**: Optionally enable and set a factor to give higher renewal need scores to larger pipes.
+    *   **Hotspot Analysis**: Enable this to generate a hotspot layer showing clusters of high-risk pipes.
+    *   **Temporal Analysis**: Enable this to create a time-aware animation of renewal needs.
+5.  **Run:** Click `OK`.
 
-## Temporal Analysis (Time-Slider Animation)
+## Key Features in Detail
 
-Beyond calculating the renewal need for the current year, reneW includes a powerful temporal analysis feature to visualize how renewal needs evolve over time.
+### Auto-Detect Layers and Fields
+To speed up the setup process, the plugin includes a powerful auto-detect feature. When you click the "Auto-Detect" button, the plugin:
+1.  **Scans all layers** in your QGIS project.
+2.  **Scores each layer** for each pipe type (water, wastewater, stormwater) based on its name (e.g., "vatten", "spill", "dagvatten").
+3.  For the best-matching layer, it then **scores each field** to find the best candidates for roles like "material", "year", and "dimension".
+4.  The scoring uses a comprehensive catalog of keywords and heuristics (e.g., a "year" field is expected to be numeric and have values in a reasonable range).
+5.  The best-matching layers and fields are automatically populated in the dialog.
+All actions are logged to the **"reneW" tab in the QGIS Log Messages Panel**, so you can see how the selections were made.
 
-When enabled, this feature generates a new, time-aware layer that is automatically styled and configured for use with the QGIS **Temporal Controller** (the time-slider).
+### Per-Pipe-Type Optimism Factors
+This feature allows you to apply your expert knowledge to the analysis by adjusting the "effective age" of pipes. In the "General Settings" tab, you can set an optimism factor for each pipe type:
+*   **Factor > 1.0**: You are optimistic; the pipes are considered "younger" than their chronological age, resulting in a lower renewal need.
+*   **Factor = 1.0**: No change (default).
+*   **Factor < 1.0**: You are pessimistic; the pipes are considered "older", resulting in a higher renewal need.
 
-### How to Use It
+The applied factor is stored in the output layers and shown in the results table for full transparency.
 
-1.  In the main plugin dialog, find the **Temporal Analysis** group box.
-2.  Check the box to enable the feature.
-3.  Specify the time period for the analysis:
-    *   **Start Year:** The first year of the simulation.
-    *   **End Year:** The last year of the simulation.
-    *   **Step (Years):** The interval for calculations (e.g., a step of 5 will calculate the need for 2025, 2030, 2035, etc.).
-4.  Run the analysis as usual by clicking `OK`.
+### Hotspot Analysis and Interactive Explorer
+When **Hotspot Analysis** is enabled, the plugin generates a polygon layer that highlights geographic clusters of high-risk pipes. This layer is styled with a rule-based renderer:
+*   **Moderate Hotspots** (average renewal need 0.5–0.75) are shown in **yellow**.
+*   **Severe Hotspots** (average renewal need ≥ 0.75) are shown in **red**.
 
-### Understanding the Output
+#### Interactive Explorer
+This feature makes the hotspot layer interactive. Simply **select a hotspot polygon** on the map, and the **Hotspot Explorer** dialog will automatically open. This dialog shows:
+*   **Key Statistics**: Total number of pipes, total length, and average renewal need for the hotspot.
+*   **Material Composition**: A summary of the materials of the pipes in the hotspot (e.g., "PVC: 10, Cast Iron: 4").
+*   **Suggested Intervention**: A recommended action (e.g., "Full Replacement", "CIPP Lining") based on the hotspot's properties (pipe type, materials, average age, and renewal need).
+*   **Contributing Pipes**: When the dialog opens, the individual pipes that make up the hotspot are automatically selected and zoomed to on the map.
 
-A new memory layer named `Temporal Renewal Need` will be added to your project. This layer is styled with a dynamic, rule-based renderer to show two variables at once:
+### Temporal Analysis (Time-Slider Animation)
+This feature generates a new, time-aware layer that is automatically styled and configured for use with the QGIS **Temporal Controller**. You can animate the map to see how renewal needs evolve over a time period you define.
 
-*   **Pipe Type:** The color of the pipe indicates its type (e.g., Blue for water, Red for wastewater, Green for stormwater). The renderer dynamically discovers the pipe types present in your data and styles them.
-*   **Renewal Need:** The intensity of the color indicates the renewal need. For each pipe type, a pale, light color means a low need, while a bright, saturated color means a high need.
-
-The legend is automatically generated to be clear and descriptive (e.g., "Water – High Need (0.6 – 0.8)").
-
-### Animating the Map
-
-1.  Open the QGIS Temporal Controller by clicking the clock icon in the map navigation toolbar.
-2.  Click the "Animated Temporal Navigation" button (the one with the green play icon).
-3.  The map is now linked to the time slider. You can press play, or drag the slider, to see the renewal needs change across the map for each year in your specified range.
+The output layer `Temporal Renewal Need` is styled to show both **pipe type** (by color) and **renewal need** (by color intensity), making it easy to visualize risk progression.
 
 ## The Calculation Model
-
-### 1. Base Renewal Need (Normal Distribution Model)
-
-The renewal need is based on the probability of failure for a pipe of a certain age. This is calculated using the **Cumulative Distribution Function (CDF) of the Normal Distribution**, denoted as `Φ`.
-
-The probability of a pipe having failed by age `t` is given by:
-`F(t) = Φ((t - μ) / σ)`
-
-Where:
-*   `t` is the age of the pipe.
-*   `μ` (mu) is the **mean lifetime** of the material. This is the age at which 50% of pipes of that material are expected to have failed.
-*   `σ` (sigma) is the **standard deviation**. This parameter controls how spread out the failures are around the mean. A smaller sigma means failures are more tightly clustered around the mean age.
-
-The plugin calculates the renewal need for the next year, which is the increase in failure probability from the current year to the next.
-
-### 2. Optional Dimension Weighting
-
-If enabled, the base renewal need is multiplied by a consequence factor:
-`Final Score = Renewal Need * (1 + (Dimension * Factor))`
+The renewal need is based on the probability of failure for a pipe of a certain age, calculated using the **Cumulative Distribution Function (CDF) of the Normal Distribution**. The `adjusted_age` (chronological age / optimism factor) is used in this calculation.
 
 ## Advanced Configuration: Customizing Parameters
-
-The plugin's calculations are controlled by `parameters.json`, located in the plugin's directory. You can edit this file directly or use the built-in **Parameter Editor** (click "Edit Parameters..." in the main dialog).
-
-### `parameters.json` Structure
-
-The file contains a nested dictionary structure where material parameters (`mu` and `sigma`) are defined for each pipe domain. The plugin ships with a comprehensive set of pre-defined materials and their expected lifetimes, but you can customize them.
-
-```json
-{
-  "metadata": { "...": "..." },
-  "municipalities": [ ],
-  "renovation_method_mapping": {
-    "1": "Lining",
-    "2": "Pipe Bursting"
-  },
-  "water": {
-    "blyror": { "mu": 90.0, "sigma": 5.0 },
-    "gjutjarn": { "mu": 60.0, "sigma": 10.0 },
-    "segjarn": { "mu": 95.0, "sigma": 10.0 },
-    "...": {}
-  },
-  "sewer": {
-    "spill": {
-      "gjutjarn": { "mu": 70.0, "sigma": 10.0 },
-      "betongror": { "mu": 92.5, "sigma": 12.5 },
-      "...": {}
-    },
-    "storm": {
-      "gjutjarn": { "mu": 75.0, "sigma": 10.0 },
-      "betongror": { "mu": 97.5, "sigma": 12.5 },
-      "...": {}
-    }
-  },
-  "liners": {
-     "default": { "mu": 50.0, "sigma": 5.0 }
-  }
-}
-```
-
-*   The main keys are `water` and `sewer`. `sewer` is further divided into `spill` (wastewater) and `storm` (stormwater).
-*   Inside each domain is a dictionary where each key is a material identifier (e.g., `"gjutjarn"`) and the value contains its `"mu"` (mean lifetime) and `"sigma"` (standard deviation).
-*   The `renovation_method_mapping` allows you to map numeric codes from your data to descriptive renovation methods.
-*   The `liners` section defines parameters for renovated pipes. If a renovation method is identified (e.g., "Lining"), the plugin will use these parameters instead of the original material's parameters, effectively resetting the pipe's age.
-
-### How Material Matching Works
-
-You do not need to have material names in your data that exactly match the keys in `parameters.json`. The plugin uses a flexible matching system (`reneW/material_lookup.py`) to map your data to the correct parameters.
-
-The system first normalizes your material string (e.g., "Segjärnsrör" becomes "segjarn") and compares it against a comprehensive vocabulary of common synonyms and abbreviations. This allows for a wide range of input data to be correctly identified.
-
-If a specific material from your data is not found in the vocabulary, the system will use the parameters defined for the `ovrigt` (other/unknown) key for that pipe domain.
-
-To customize the logic, you can either edit the `mu` and `sigma` values in the **Parameter Editor** or directly in the `parameters.json` file.
+The plugin's underlying statistical model is controlled by `parameters.json`. You can edit this file directly or use the built-in **Parameter Editor** (click "Edit Parameters..." in the main dialog) to customize the mean lifetime (`mu`) and standard deviation (`sigma`) for different materials.
