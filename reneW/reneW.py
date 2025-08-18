@@ -209,7 +209,6 @@ class ReneW:
         if result:
             self.dlg.save_settings()
             if self.dlg.useTemporalAnalysis():
-                params_data['num_classes'] = self.dlg.numColorClasses()
                 self._run_temporal_analysis(params_data)
             else:
                 self._run_standard_analysis(params_data)
@@ -585,7 +584,7 @@ class ReneW:
         self._configure_temporal_properties(temporal_layer)
 
         # Apply styling
-        self._style_temporal_layer(temporal_layer, params_data.get('num_classes', 5))
+        self._style_temporal_layer(temporal_layer)
 
         # Add to project
         QgsProject.instance().addMapLayer(temporal_layer)
@@ -621,61 +620,80 @@ class ReneW:
         temporal_props.setEndField("end_time")
         temporal_props.setIsActive(True)
 
-    def _style_temporal_layer(self, layer, num_classes=5):
-        """Apply graduated styling by pipe type and renewal need."""
-        root_symbol = QgsSymbol.defaultSymbol(layer.geometryType())
-        root_rule = QgsRuleBasedRenderer.Rule(root_symbol)
+def _style_temporal_layer(self, temporal_layer):
+    """
+    Apply styling to the temporal renewal need layer.
+    Risk shown as Low/Medium/High with color intensity + line width.
+    Pipe type controls hue (Water=Blue, Spill=Red, Storm=Green).
+    High-risk pipes get a matching halo effect.
+    """
 
-        renderer = QgsRuleBasedRenderer(root_rule)
+    from qgis.core import (
+        QgsRuleBasedRenderer,
+        QgsSymbol,
+        QgsLineSymbol
+    )
+    from qgis.PyQt.QtGui import QColor
 
-        # Define color ramps for each pipe type
-        palettes = {
-            'water': ('#deebf7', '#08519c'),       # light blue → dark blue
-            'sewer': ('#fee5d9', '#a50f15'),       # light red → dark red
-            'stormwater': ('#e5f5e0', '#006d2c')   # light green → dark green
-        }
+    # Make sure required fields exist
+    if temporal_layer.fields().lookupField("pipe_type") == -1:
+        self.iface.messageBar().pushWarning("reneW", "No 'pipe_type' field found in temporal layer.")
+        return
+    if temporal_layer.fields().lookupField("renewal_need") == -1:
+        self.iface.messageBar().pushWarning("reneW", "No 'renewal_need' field found in temporal layer.")
+        return
 
-        pipe_types = set()
-        pipe_type_idx = layer.fields().indexFromName("pipe_type")
+    # Define base hues per pipe type
+    base_colors = {
+        "water": QColor(0, 100, 255),       # Blue
+        "sewer/spill": QColor(220, 50, 50), # Red
+        "sewer/storm": QColor(50, 180, 80)  # Green
+    }
 
-        if pipe_type_idx != -1:
-            for feature in layer.getFeatures():
-                pipe_type = feature.attributes()[pipe_type_idx]
-                if pipe_type:
-                    pipe_types.add(str(pipe_type).lower())
+    # Define risk bins
+    risk_classes = [
+        ("Low",    0.0, 0.3),
+        ("Medium", 0.3, 0.6),
+        ("High",   0.6, 1.0)
+    ]
 
-        for pipe_type in sorted(pipe_types):
-            if pipe_type not in palettes:
-                continue
+    root_rule = QgsRuleBasedRenderer.Rule(None)
 
-            color1, color2 = palettes[pipe_type]
+    for pipe_type, base_color in base_colors.items():
+        for label, low, high in risk_classes:
+            # Create a symbol for this combination
+            symbol = QgsLineSymbol.createSimple({})
+            color = QColor(base_color)
 
-            # Build graduated renderer ranges
-            step = 1.0 / num_classes
-            for i in range(num_classes):
-                lower = i * step
-                upper = (i + 1) * step if i < num_classes - 1 else 1.0
-                symbol = QgsSymbol.defaultSymbol(layer.geometryType())
-                # Interpolate color between color1 and color2
-                r = QColor(color1).redF() + (QColor(color2).redF() - QColor(color1).redF()) * (i / (num_classes - 1))
-                g = QColor(color1).greenF() + (QColor(color2).greenF() - QColor(color1).greenF()) * (i / (num_classes - 1))
-                b = QColor(color1).blueF() + (QColor(color2).blueF() - QColor(color1).blueF()) * (i / (num_classes - 1))
-                symbol.setColor(QColor.fromRgbF(r, g, b))
+            # Adjust saturation/brightness based on risk
+            if label == "Low":
+                color.setAlphaF(0.4)
+                width = 0.6
+            elif label == "Medium":
+                color.setAlphaF(0.7)
+                width = 1.2
+            else:  # High
+                color.setAlphaF(1.0)
+                width = 2.0
+                # Add halo effect with matching pipe color
+                layer0 = symbol.symbolLayer(0)
+                layer0.setStrokeColor(color)
+                halo = layer0.clone()
+                halo.setStrokeColor(QColor(color.red(), color.green(), color.blue(), 120))
+                halo.setStrokeWidth(width + 1.5)
+                symbol.appendSymbolLayer(halo)
 
-                rng = QgsRuleBasedRenderer.Rule(
-                    symbol,
-                    filterExp=f'"pipe_type" = \'{pipe_type}\' AND "renewal_need" > {lower} AND "renewal_need" <= {upper}',
-                    label=f'{pipe_type.capitalize()} {int(lower*100)}–{int(upper*100)}%'
-                )
-                root_rule.appendChild(rng)
+            symbol.setColor(color)
+            symbol.setWidth(width)
 
-        if root_rule.children():
-            try:
-                root_rule.removeChildAt(0)
-            except:
-                pass
+            # Rule expression
+            expr = f"\"pipe_type\" = '{pipe_type}' AND \"renewal_need\" >= {low} AND \"renewal_need\" < {high}"
+            rule = QgsRuleBasedRenderer.Rule(symbol, filterExpression=expr, label=f"{pipe_type} – {label}")
+            root_rule.appendChild(rule)
 
-        layer.setRenderer(renderer)
+    renderer = QgsRuleBasedRenderer(root_rule)
+    temporal_layer.setRenderer(renderer)
+    temporal_layer.triggerRepaint()
 
     def _run_hotspot_analysis(self, analysis_configs, threshold, distance, output_field_name):
         """Run hotspot analysis on processed layers."""
