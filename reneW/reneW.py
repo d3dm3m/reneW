@@ -546,8 +546,8 @@ class ReneW:
                         install_year=effective_install_year,
                         material_key=key
                     )
-                    renewal_need = calculation_logic.renewal_for_cohort_period(
-                        cohort, year, year + 1, params
+                    renewal_need = calculation_logic.cumulative_failure_probability(
+                        cohort, year, params
                     )
 
                     # Create temporal feature with proper datetime fields

@@ -94,6 +94,19 @@ def derive_sigma_from_t50_t90(t50: float, t90: float) -> float:
 def decades_from(start: int, n_periods: int) -> List[Tuple[int, int]]:
     return [(start + 10*i, start + 10*(i+1)) for i in range(n_periods)]
 
+def cumulative_failure_probability(cohort, year, params):
+    """
+    Returns the cumulative probability of failure (F(t))
+    for a given cohort up to the given year.
+    """
+    import math
+    t = max(0, year - cohort.install_year)
+    mu = params.mu
+    sigma = params.sigma
+    # Standard normal CDF
+    z = (t - mu) / sigma
+    return 0.5 * (1 + math.erf(z / math.sqrt(2)))
+
 if __name__ == "__main__":
     # Quick smoke test
     pe = MaterialParams(mu=125.6, sigma=27.7)
