@@ -541,13 +541,17 @@ class ReneW:
 
                 layer.changeAttributeValue(feature.id(), output_idx, renewal_need)
                 if renewal_need >= 0.5:
+                    # Check if the year was imputed to format the age string
+                    is_imputed = feature.attribute(flag_idx) == 1
+                    age_display = f"{age} (imputed)" if is_imputed else age
+
                     high_risk_results.append({
                         'layer_name': layer_name,
                         'layer_id': layer.id(),
                         'feature_id': feature.id(),
                         'pipe_type': friendly_pipe,
                         'material': material_name,
-                        'age': age,
+                        'age': age_display,
                         'renewal_need': renewal_need,
                         'optimism_factor': optimism_factor
                     })

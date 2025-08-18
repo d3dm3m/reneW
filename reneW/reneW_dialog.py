@@ -5,7 +5,7 @@ import re
 import unicodedata
 
 from qgis.core import QgsProject, Qgis, QgsMessageLog, QgsMapLayerProxyModel, QgsVectorLayer
-from qgis.PyQt.QtWidgets import QDialog, QDialogButtonBox, QWidget, QVBoxLayout, QCheckBox, QGroupBox, QGridLayout, QLabel, QFormLayout, QDoubleSpinBox, QSpinBox
+from qgis.PyQt.QtWidgets import QDialog, QDialogButtonBox, QWidget, QVBoxLayout, QCheckBox, QGroupBox, QGridLayout, QLabel, QFormLayout, QDoubleSpinBox, QSpinBox, QComboBox, QLineEdit, QHBoxLayout
 from qgis.PyQt.QtCore import QSettings
 from qgis.PyQt import uic
 from qgis.gui import QgsFieldComboBox, QgsMapLayerComboBox
@@ -286,6 +286,44 @@ class ReneWDialog(QDialog, FORM_CLASS):
         self.groupBox.layout().addWidget(optimism_group)
 
 
+        # --- Property-based Year Imputation ---
+        self.prop_group = QGroupBox(self.tr("Property-based Year Imputation"))
+        prop_layout = QVBoxLayout()
+
+        # Property Layer dropdown
+        layer_layout = QHBoxLayout()
+        layer_layout.addWidget(QLabel(self.tr("Property Layer:")))
+        self.propertyLayerCombo = QComboBox()
+        layer_layout.addWidget(self.propertyLayerCombo)
+        prop_layout.addLayout(layer_layout)
+
+        # Property Year Field dropdown
+        field_layout = QHBoxLayout()
+        field_layout.addWidget(QLabel(self.tr("Year Field:")))
+        self.propertyYearFieldCombo = QComboBox()
+        field_layout.addWidget(self.propertyYearFieldCombo)
+        prop_layout.addLayout(field_layout)
+
+        # K Neighbors
+        kneigh_layout = QHBoxLayout()
+        kneigh_layout.addWidget(QLabel(self.tr("K Neighbors:")))
+        self.kNeighborsSpin = QSpinBox()
+        self.kNeighborsSpin.setRange(1, 200)
+        self.kNeighborsSpin.setValue(15)
+        kneigh_layout.addWidget(self.kNeighborsSpin)
+        prop_layout.addLayout(kneigh_layout)
+
+        # Fractions along pipe (comma-separated string)
+        frac_layout = QHBoxLayout()
+        frac_layout.addWidget(QLabel(self.tr("Sample Fractions (0–1, comma separated):")))
+        self.sampleFractionsEdit = QLineEdit("0,0.25,0.5,0.75,1")
+        frac_layout.addWidget(self.sampleFractionsEdit)
+        prop_layout.addLayout(frac_layout)
+
+        self.prop_group.setLayout(prop_layout)
+        self.layout().addWidget(self.prop_group)
+
+
         # --- Programmatically add Temporal Analysis controls ---
         self.mTemporalGroupBox = QGroupBox(self.tr("Temporal Analysis"))
         self.mTemporalGroupBox.setCheckable(True)
@@ -327,6 +365,16 @@ class ReneWDialog(QDialog, FORM_CLASS):
             self.btnAutoDetect.clicked.connect(self._auto_detect_layers_fields)
         except Exception:
             pass  # button not present in UI -> safe no-op
+
+        # Populate property layer combo with point layers
+        self.propertyLayerCombo.clear()
+        for lyr in QgsProject.instance().mapLayers().values():
+            if isinstance(lyr, QgsVectorLayer) and lyr.geometryType() == QgsVectorLayer.PointGeometry:
+                self.propertyLayerCombo.addItem(lyr.name(), lyr.id())
+
+        # Update fields when a layer is chosen
+        self.propertyLayerCombo.currentIndexChanged.connect(self._updatePropertyFields)
+        self._updatePropertyFields()
 
         # --- Set initial validation state ---
         self._validate_inputs()
@@ -494,6 +542,18 @@ class ReneWDialog(QDialog, FORM_CLASS):
         except Exception as e:
             _log(f"Could not push message to bar: {e}")
 
+    def _updatePropertyFields(self):
+        self.propertyYearFieldCombo.clear()
+        idx = self.propertyLayerCombo.currentIndex()
+        if idx < 0:
+            return
+        layer_id = self.propertyLayerCombo.itemData(idx)
+        layer = QgsProject.instance().mapLayer(layer_id)
+        if not layer:
+            return
+        for field in layer.fields():
+            self.propertyYearFieldCombo.addItem(field.name())
+
     # --- Getters for analysis parameters ---
     def useDimensionWeighting(self) -> bool:
         return self.mCheckBoxEnableDimensionWeighting.isChecked()
@@ -558,6 +618,28 @@ class ReneWDialog(QDialog, FORM_CLASS):
                     'reno_method_field': tab['reno_method_combo'].currentField()
                 })
         return configs
+
+    def propertyLayer(self):
+        idx = self.propertyLayerCombo.currentIndex()
+        if idx < 0:
+            return None
+        layer_id = self.propertyLayerCombo.itemData(idx)
+        return QgsProject.instance().mapLayer(layer_id)
+
+    def propertyYearField(self):
+        return self.propertyYearFieldCombo.currentText()
+
+    def propertyKNeighbors(self):
+        return self.kNeighborsSpin.value()
+
+    def propertySampleFractions(self):
+        text = self.sampleFractionsEdit.text().strip()
+        if not text:
+            return [0.0, 0.5, 1.0]
+        try:
+            return [float(x) for x in text.split(",") if x.strip() != ""]
+        except Exception:
+            return [0.0, 0.5, 1.0]
 
     def _validate_inputs(self):
         try:
@@ -631,6 +713,10 @@ class ReneWDialog(QDialog, FORM_CLASS):
         settings.setValue("reneW/water_factor", self.water_factor_spinbox.value())
         settings.setValue("reneW/wastewater_factor", self.wastewater_factor_spinbox.value())
         settings.setValue("reneW/stormwater_factor", self.stormwater_factor_spinbox.value())
+        settings.setValue("prop_layer_idx", self.propertyLayerCombo.currentIndex())
+        settings.setValue("prop_year_field", self.propertyYearFieldCombo.currentText())
+        settings.setValue("prop_k_neighbors", self.kNeighborsSpin.value())
+        settings.setValue("prop_fractions", self.sampleFractionsEdit.text())
 
 
     def load_settings(self):
@@ -670,3 +756,16 @@ class ReneWDialog(QDialog, FORM_CLASS):
         self.water_factor_spinbox.setValue(settings.value("reneW/water_factor", 1.0, type=float))
         self.wastewater_factor_spinbox.setValue(settings.value("reneW/wastewater_factor", 1.0, type=float))
         self.stormwater_factor_spinbox.setValue(settings.value("reneW/stormwater_factor", 1.0, type=float))
+
+        idx = int(settings.value("prop_layer_idx", -1))
+        if idx >= 0 and idx < self.propertyLayerCombo.count():
+            self.propertyLayerCombo.setCurrentIndex(idx)
+
+        # We must call _updatePropertyFields here so the field combo is populated before we try to set it
+        self._updatePropertyFields()
+
+        field = settings.value("prop_year_field", "")
+        if field and self.propertyYearFieldCombo.findText(field) != -1:
+            self.propertyYearFieldCombo.setCurrentText(field)
+        self.kNeighborsSpin.setValue(int(settings.value("prop_k_neighbors", 15)))
+        self.sampleFractionsEdit.setText(settings.value("prop_fractions", "0,0.25,0.5,0.75,1"))
