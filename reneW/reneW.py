@@ -623,68 +623,60 @@ class ReneW:
     def _style_temporal_layer(self, temporal_layer):
         """
         Apply styling to the temporal renewal need layer.
-        Risk shown as Low/Medium/High with color intensity + line width.
-        Pipe type controls hue (Water=Blue, Spill=Red, Storm=Green).
-        High-risk pipes get a matching halo effect.
+        Compatible with QGIS 3.99 (Qt6 / Python 3.12).
+        Adds halos matching pipe type to make risks stand out visually.
         """
-
-        from qgis.core import QgsRuleBasedRenderer, QgsLineSymbol
+        from qgis.core import QgsRuleBasedRenderer, QgsSymbol
         from qgis.PyQt.QtGui import QColor
 
-        # Make sure required fields exist
-        if temporal_layer.fields().lookupField("pipe_type") == -1:
+        # Grab field index for pipe type
+        type_field = temporal_layer.fields().lookupField("pipe_type")
+        if type_field == -1:
             self.iface.messageBar().pushWarning("reneW", "No 'pipe_type' field found in temporal layer.")
             return
-        if temporal_layer.fields().lookupField("renewal_need") == -1:
-            self.iface.messageBar().pushWarning("reneW", "No 'renewal_need' field found in temporal layer.")
-            return
 
-        # Define base hues per pipe type
+        # Collect unique pipe types
+        unique_types = temporal_layer.uniqueValues(type_field)
+
+        # Root rule for all categories
+        symbol = QgsSymbol.defaultSymbol(temporal_layer.geometryType())
+        root_rule = QgsRuleBasedRenderer.Rule(symbol)
+
+        # Base colors for pipe types
         base_colors = {
-            "water": QColor(0, 100, 255),       # Blue
-            "sewer/spill": QColor(220, 50, 50), # Red
-            "sewer/storm": QColor(50, 180, 80)  # Green
+            "water": QColor("blue"),
+            "spill": QColor("red"),
+            "storm": QColor("green"),
         }
 
-        # Define risk bins
-        risk_classes = [
-            ("Low",    0.0, 0.3),
-            ("Medium", 0.3, 0.6),
-            ("High",   0.6, 1.0)
+        # Risk buckets
+        buckets = [
+            (0.0, 0.3, "Low Risk"),
+            (0.3, 0.6, "Medium Risk"),
+            (0.6, 1.0, "High Risk"),
         ]
 
-        root_rule = QgsRuleBasedRenderer.Rule(None)
+        for pipe_type in unique_types:
+            base_color = base_colors.get(str(pipe_type).lower(), QColor("gray"))
 
-        for pipe_type, base_color in base_colors.items():
-            for label, low, high in risk_classes:
-                # Create a symbol for this combination
-                symbol = QgsLineSymbol.createSimple({})
+            for (low, high, label) in buckets:
+                # Create a symbol for this pipe type + risk bucket
+                symbol = QgsSymbol.defaultSymbol(temporal_layer.geometryType())
                 color = QColor(base_color)
-
-                # Adjust saturation/brightness based on risk
-                if label == "Low":
-                    color.setAlphaF(0.4)
-                    width = 0.6
-                elif label == "Medium":
-                    color.setAlphaF(0.7)
-                    width = 1.2
-                else:  # High
-                    color.setAlphaF(1.0)
-                    width = 2.0
-                    # Add halo effect with matching pipe color
-                    layer0 = symbol.symbolLayer(0)
-                    layer0.setStrokeColor(color)
-                    halo = layer0.clone()
-                    halo.setStrokeColor(QColor(color.red(), color.green(), color.blue(), 120))
-                    halo.setStrokeWidth(width + 1.5)
-                    symbol.appendSymbolLayer(halo)
+                # Opacity based on risk level
+                color.setAlphaF(0.3 + 0.7 * high)
 
                 symbol.setColor(color)
-                symbol.setWidth(width)
+
+                # Add halo (outline) in same pipe-type color
+                symbol.symbolLayer(0).setStrokeColor(base_color)
+                symbol.symbolLayer(0).setStrokeWidth(0.8)
 
                 # Rule expression
                 expr = f"\"pipe_type\" = '{pipe_type}' AND \"renewal_need\" >= {low} AND \"renewal_need\" < {high}"
-                rule = QgsRuleBasedRenderer.Rule(symbol, filterExpression=expr, label=f"{pipe_type} – {label}")
+
+                # NOTE: must use positional args (expr, label) instead of keywords
+                rule = QgsRuleBasedRenderer.Rule(symbol, expr, f"{pipe_type} – {label}")
                 root_rule.appendChild(rule)
 
         renderer = QgsRuleBasedRenderer(root_rule)
