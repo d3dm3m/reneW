@@ -642,13 +642,6 @@ class ReneW:
         symbol = QgsSymbol.defaultSymbol(temporal_layer.geometryType())
         root_rule = QgsRuleBasedRenderer.Rule(symbol)
 
-        # Base colors for pipe types
-        base_colors = {
-            "water": QColor("blue"),
-            "spill": QColor("red"),
-            "storm": QColor("green"),
-        }
-
         # Risk buckets (low, high, label, halo width)
         buckets = [
             (0.0, 0.3, "Low Risk", 0.4),
@@ -657,7 +650,15 @@ class ReneW:
         ]
 
         for pipe_type in unique_types:
-            base_color = base_colors.get(str(pipe_type).lower(), QColor("gray"))
+            ptype = str(pipe_type).lower()
+            if ptype in ("sewer", "spill", "sewer/spill", "wastewater"):
+                base_color = QColor("red")
+            elif ptype in ("storm", "stormwater"):
+                base_color = QColor("green")
+            elif ptype == "water":
+                base_color = QColor("blue")
+            else:
+                base_color = QColor("gray")
 
             for (low, high, label, halo_width) in buckets:
                 # Create a symbol for this pipe type + risk bucket
