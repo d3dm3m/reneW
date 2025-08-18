@@ -580,6 +580,10 @@ class ReneW:
             )
             self.iface.mapCanvas().refresh()
 
+        # Apply styling to the layers that were processed
+        for config in analysis_configs:
+            self._style_standard_analysis_layer(config['layer'])
+
         hotspot_layer = None
         if self.dlg.useHotspotAnalysis():
             hotspot_threshold = self.dlg.hotspotThreshold()
@@ -915,6 +919,54 @@ class ReneW:
         temporal_layer.setRenderer(renderer)
         temporal_layer.triggerRepaint()
 
+    def _style_standard_analysis_layer(self, layer):
+        """
+        Applies a rule-based renderer to the output of the standard analysis.
+        - Colors pipes by renewal_need (Low, Medium, High).
+        - Adds a dashed outline for pipes with an imputed year.
+        """
+        root_rule = QgsRuleBasedRenderer.Rule(None)
+
+        # --- Renewal Need Rules ---
+        field_name = 'renewal_need'
+        if layer.fields().indexFromName(field_name) == -1:
+            field_name = 'fornyelsebehov' # Fallback to legacy name
+            if layer.fields().indexFromName(field_name) == -1:
+                return # No field to style on
+
+        renewal_rules = [
+            (0.0, 0.33, QColor('green'), 'Low Need'),
+            (0.33, 0.66, QColor('orange'), 'Medium Need'),
+            (0.66, 1.01, QColor('red'), 'High Need')
+        ]
+
+        for lower, upper, color, label in renewal_rules:
+            symbol = QgsSymbol.defaultSymbol(layer.geometryType())
+            symbol.setColor(color)
+            rule = QgsRuleBasedRenderer.Rule(symbol)
+            rule.setFilterExpression(f'"{field_name}" >= {lower} AND "{field_name}" < {upper}')
+            rule.setLabel(label)
+            root_rule.appendChild(rule.clone())
+
+        # --- Imputed Year Rule ---
+        imputed_field = 'year_imputed'
+        if layer.fields().indexFromName(imputed_field) != -1:
+            imputed_symbol = QgsSymbol.defaultSymbol(layer.geometryType())
+            # Create a dashed line symbol layer
+            line_layer = imputed_symbol.symbolLayer(0)
+            line_layer.setPenStyle(Qt.PenStyle.DashLine)
+            line_layer.setStrokeColor(QColor('black'))
+            line_layer.setWidth(0.5)
+
+            rule = QgsRuleBasedRenderer.Rule(imputed_symbol)
+            rule.setFilterExpression(f'"{imputed_field}" = 1')
+            rule.setLabel('Imputed Year')
+            root_rule.appendChild(rule.clone())
+
+        renderer = QgsRuleBasedRenderer(root_rule)
+        layer.setRenderer(renderer)
+        layer.triggerRepaint()
+
 
     def _run_hotspot_analysis(self, analysis_configs, threshold, distance, output_field_name):
         """
@@ -1114,13 +1166,14 @@ class ReneW:
         pipe_count = feature["pipe_count"]
         avg_need = feature["avg_renewal_need"]
 
-        # Calculate average age
+        # Calculate average age and count imputed years
         ages = []
+        imputed_count = 0
         for config in analysis_configs:
-            # This assumes that the pipe IDs are unique across all layers in the analysis.
-            # A more robust implementation might need to store layer ID along with pipe ID.
             layer = config['layer']
             year_field = config['year_field']
+            imputed_field_idx = layer.fields().indexFromName("year_imputed")
+
             for pid in pipe_ids:
                 try:
                     pipe_feature = layer.getFeature(pid)
@@ -1128,6 +1181,9 @@ class ReneW:
                     install_year = int(year_val)
                     age = datetime.now().year - install_year
                     ages.append(age)
+
+                    if imputed_field_idx != -1 and pipe_feature.attribute(imputed_field_idx) == 1:
+                        imputed_count += 1
                 except:
                     # Feature not in this layer or other error, continue
                     continue
@@ -1136,7 +1192,7 @@ class ReneW:
 
         # Open dialog
         dlg = HotspotExplorerDialog(self.iface.mainWindow(), iface=self.iface)
-        dlg.populate(feature.id(), pipe_ids_str, materials, length_km, pipe_count, avg_need, avg_age)
+        dlg.populate(feature.id(), pipe_ids_str, materials, length_km, pipe_count, avg_need, avg_age, imputed_count)
         dlg.setLayer(hotspot_layer)
         # For simplicity, we assume the first layer in the config is the pipe layer.
         # This might need to be improved if multiple pipe layers are used.

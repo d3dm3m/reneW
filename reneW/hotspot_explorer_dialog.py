@@ -29,13 +29,19 @@ class HotspotExplorerDialog(QDialog):
         self.contributing_pipe_ids = []
         self.pipe_layer = None  # Will point to combined pipe layer
 
-    def populate(self, fid, pipe_ids, materials, length_km, pipe_count, avg_need, avg_age):
+    def populate(self, fid, pipe_ids, materials, length_km, pipe_count, avg_need, avg_age, imputed_count=0):
         self.feature_id = fid
-        self.info_label.setText(f"Hotspot ID: {fid}")
+
+        base_info = f"Hotspot ID: {fid}"
+        if imputed_count > 0:
+            base_info += f"  |  <b style='color:orange;'>⚠️ {imputed_count} pipe(s) have imputed years</b>"
+        self.info_label.setText(base_info)
+
         self.details_text.setPlainText(
             f"Pipe Count: {pipe_count}\n"
             f"Avg Renewal Need: {avg_need:.2f}\n"
             f"Total Length: {length_km:.2f} km\n"
+            f"Avg Age (approx): {avg_age:.1f} years\n"
             f"Materials: {materials}\n"
             f"Pipes: {pipe_ids}"
         )
