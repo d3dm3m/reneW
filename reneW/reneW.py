@@ -620,202 +620,161 @@ class ReneW:
         temporal_props.setEndField("end_time")
         temporal_props.setIsActive(True)
 
-def _style_temporal_layer(self, temporal_layer):
-    """
-    Apply styling to the temporal renewal need layer.
-    Risk shown as Low/Medium/High with color intensity + line width.
-    Pipe type controls hue (Water=Blue, Spill=Red, Storm=Green).
-    High-risk pipes get a matching halo effect.
-    """
+    def _style_temporal_layer(self, temporal_layer):
+        """
+        Apply styling to the temporal renewal need layer.
+        Risk shown as Low/Medium/High with color intensity + line width.
+        Pipe type controls hue (Water=Blue, Spill=Red, Storm=Green).
+        High-risk pipes get a matching halo effect.
+        """
 
-    from qgis.core import (
-        QgsRuleBasedRenderer,
-        QgsSymbol,
-        QgsLineSymbol
-    )
-    from qgis.PyQt.QtGui import QColor
+        from qgis.core import QgsRuleBasedRenderer, QgsLineSymbol
+        from qgis.PyQt.QtGui import QColor
 
-    # Make sure required fields exist
-    if temporal_layer.fields().lookupField("pipe_type") == -1:
-        self.iface.messageBar().pushWarning("reneW", "No 'pipe_type' field found in temporal layer.")
-        return
-    if temporal_layer.fields().lookupField("renewal_need") == -1:
-        self.iface.messageBar().pushWarning("reneW", "No 'renewal_need' field found in temporal layer.")
-        return
+        # Make sure required fields exist
+        if temporal_layer.fields().lookupField("pipe_type") == -1:
+            self.iface.messageBar().pushWarning("reneW", "No 'pipe_type' field found in temporal layer.")
+            return
+        if temporal_layer.fields().lookupField("renewal_need") == -1:
+            self.iface.messageBar().pushWarning("reneW", "No 'renewal_need' field found in temporal layer.")
+            return
 
-    # Define base hues per pipe type
-    base_colors = {
-        "water": QColor(0, 100, 255),       # Blue
-        "sewer/spill": QColor(220, 50, 50), # Red
-        "sewer/storm": QColor(50, 180, 80)  # Green
-    }
+        # Define base hues per pipe type
+        base_colors = {
+            "water": QColor(0, 100, 255),       # Blue
+            "sewer/spill": QColor(220, 50, 50), # Red
+            "sewer/storm": QColor(50, 180, 80)  # Green
+        }
 
-    # Define risk bins
-    risk_classes = [
-        ("Low",    0.0, 0.3),
-        ("Medium", 0.3, 0.6),
-        ("High",   0.6, 1.0)
-    ]
+        # Define risk bins
+        risk_classes = [
+            ("Low",    0.0, 0.3),
+            ("Medium", 0.3, 0.6),
+            ("High",   0.6, 1.0)
+        ]
 
-    root_rule = QgsRuleBasedRenderer.Rule(None)
+        root_rule = QgsRuleBasedRenderer.Rule(None)
 
-    for pipe_type, base_color in base_colors.items():
-        for label, low, high in risk_classes:
-            # Create a symbol for this combination
-            symbol = QgsLineSymbol.createSimple({})
-            color = QColor(base_color)
+        for pipe_type, base_color in base_colors.items():
+            for label, low, high in risk_classes:
+                # Create a symbol for this combination
+                symbol = QgsLineSymbol.createSimple({})
+                color = QColor(base_color)
 
-            # Adjust saturation/brightness based on risk
-            if label == "Low":
-                color.setAlphaF(0.4)
-                width = 0.6
-            elif label == "Medium":
-                color.setAlphaF(0.7)
-                width = 1.2
-            else:  # High
-                color.setAlphaF(1.0)
-                width = 2.0
-                # Add halo effect with matching pipe color
-                layer0 = symbol.symbolLayer(0)
-                layer0.setStrokeColor(color)
-                halo = layer0.clone()
-                halo.setStrokeColor(QColor(color.red(), color.green(), color.blue(), 120))
-                halo.setStrokeWidth(width + 1.5)
-                symbol.appendSymbolLayer(halo)
+                # Adjust saturation/brightness based on risk
+                if label == "Low":
+                    color.setAlphaF(0.4)
+                    width = 0.6
+                elif label == "Medium":
+                    color.setAlphaF(0.7)
+                    width = 1.2
+                else:  # High
+                    color.setAlphaF(1.0)
+                    width = 2.0
+                    # Add halo effect with matching pipe color
+                    layer0 = symbol.symbolLayer(0)
+                    layer0.setStrokeColor(color)
+                    halo = layer0.clone()
+                    halo.setStrokeColor(QColor(color.red(), color.green(), color.blue(), 120))
+                    halo.setStrokeWidth(width + 1.5)
+                    symbol.appendSymbolLayer(halo)
 
-            symbol.setColor(color)
-            symbol.setWidth(width)
+                symbol.setColor(color)
+                symbol.setWidth(width)
 
-            # Rule expression
-            expr = f"\"pipe_type\" = '{pipe_type}' AND \"renewal_need\" >= {low} AND \"renewal_need\" < {high}"
-            rule = QgsRuleBasedRenderer.Rule(symbol, filterExpression=expr, label=f"{pipe_type} – {label}")
-            root_rule.appendChild(rule)
+                # Rule expression
+                expr = f"\"pipe_type\" = '{pipe_type}' AND \"renewal_need\" >= {low} AND \"renewal_need\" < {high}"
+                rule = QgsRuleBasedRenderer.Rule(symbol, filterExpression=expr, label=f"{pipe_type} – {label}")
+                root_rule.appendChild(rule)
 
-    renderer = QgsRuleBasedRenderer(root_rule)
-    temporal_layer.setRenderer(renderer)
-    temporal_layer.triggerRepaint()
+        renderer = QgsRuleBasedRenderer(root_rule)
+        temporal_layer.setRenderer(renderer)
+        temporal_layer.triggerRepaint()
+
 
     def _run_hotspot_analysis(self, analysis_configs, threshold, distance, output_field_name):
-        """Run hotspot analysis on processed layers."""
-        # Import processing with fallback
+        """
+        Runs a hotspot analysis on the layers that have been processed.
+        """
+
+        # Choose processing runner with graceful fallback
         try:
-            import processing
+            import processing  # QGIS processing plugin
             run_algo = processing.run
-        except ImportError:
+        except Exception:
+            # Fallback to core API helper if available
             from qgis.core import QgsProcessing
             run_algo = QgsProcessing.run
-
         feedback = QgsProcessingFeedback()
         high_risk_layers = []
         project_crs = QgsProject.instance().crs()
 
-        # Step 1: Create temporary layers of high-risk features
+        # Step 1: Create temporary layers of high-risk features for each input layer
         for config in analysis_configs:
             layer = config['layer']
-            expr = f'"{output_field_name}" >= {threshold}'
+            expr = f"\"{output_field_name}\" >= {threshold}"
 
-            # Create memory layer with filtered features
-            temp_layer = QgsVectorLayer(
-                f"LineString?crs={project_crs.authid()}",
-                f"high_risk_{layer.name()}",
-                "memory"
-            )
+            # Create a memory layer with only the features matching the expression
+            temp_layer = layer.clone()
+            temp_layer.setName(f"high_risk_{layer.name()}")
 
-            temp_provider = temp_layer.dataProvider()
-            temp_provider.addAttributes(layer.fields())
-            temp_layer.updateFields()
-
-            # Add filtered features
+            # Request features with the filter
             request = QgsFeatureRequest().setFilterExpression(expr)
-            features = [f for f in layer.getFeatures(request)]
 
-            if features:
-                temp_layer.startEditing()
-                temp_provider.addFeatures(features)
-                temp_layer.commitChanges()
+            # Use a data provider to add features to the temp layer
+            temp_provider = temp_layer.dataProvider()
+            temp_layer.startEditing()
+            temp_provider.addFeatures(layer.getFeatures(request))
+            temp_layer.commitChanges()
+
+            if temp_layer.featureCount() > 0:
                 high_risk_layers.append(temp_layer)
 
         if not high_risk_layers:
-            self.iface.messageBar().pushMessage(
-                tr("Info"),
-                tr("No features found above the risk threshold for hotspot analysis."),
-                Qgis.Info
-            )
+            self.iface.messageBar().pushMessage(tr("Info"), tr("No features found above the risk threshold for hotspot analysis."), Qgis.Info)
             return None
 
-        try:
-            # Step 2: Merge high-risk layers
-            merge_params = {
-                'LAYERS': high_risk_layers,
-                'CRS': project_crs,
-                'OUTPUT': 'memory:merged_high_risk'
-            }
-            merged_result = run_algo("native:mergevectorlayers", merge_params, feedback=feedback)
-            merged_layer = merged_result['OUTPUT']
+        # Step 2: Merge high-risk feature layers into one
+        merged_layer_path = 'memory:merged_high_risk'
+        merge_params = {'LAYERS': high_risk_layers, 'CRS': project_crs, 'OUTPUT': merged_layer_path}
+        merged_result = run_algo("native:mergevectorlayers", merge_params, feedback=feedback)
+        merged_layer = merged_result['OUTPUT']
 
-            # Step 3: Buffer the merged layer
-            buffer_params = {
-                'INPUT': merged_layer,
-                'DISTANCE': distance,
-                'SEGMENTS': 8,
-                'DISSOLVE': False,
-                'OUTPUT': 'memory:buffered'
-            }
-            buffered_result = run_algo("native:buffer", buffer_params, feedback=feedback)
-            buffered_layer = buffered_result['OUTPUT']
+        # Step 3: Buffer the merged layer
+        buffered_layer_path = 'memory:buffered'
+        buffer_params = {'INPUT': merged_layer, 'DISTANCE': distance, 'SEGMENTS': 8, 'DISSOLVE': False, 'OUTPUT': buffered_layer_path}
+        buffered_result = run_algo("native:buffer", buffer_params, feedback=feedback)
+        buffered_layer = buffered_result['OUTPUT']
 
-            # Step 4: Dissolve overlapping buffers
-            dissolve_params = {
-                'INPUT': buffered_layer,
-                'OUTPUT': 'memory:dissolved_hotspots'
-            }
-            dissolved_result = run_algo("native:dissolve", dissolve_params, feedback=feedback)
-            dissolved_layer = dissolved_result['OUTPUT']
+        # Step 4: Dissolve the buffered layer to create hotspots
+        dissolved_layer_path = 'memory:dissolved_hotspots'
+        dissolve_params = {'INPUT': buffered_layer, 'OUTPUT': dissolved_layer_path}
+        dissolved_result = run_algo("native:dissolve", dissolve_params, feedback=feedback)
+        dissolved_layer = dissolved_result['OUTPUT']
 
-            # Step 5: Calculate statistics for each hotspot
-            stats_params = {
-                'INPUT': dissolved_layer,
-                'JOIN': merged_layer,
-                'PREDICATE': [0],  # Intersects
-                'JOIN_FIELDS': [output_field_name],
-                'SUMMARIES': [5, 6],  # Count, Mean
-                'DISCARD_NONMATCHING': True,
-                'OUTPUT': 'memory:hotspots_with_stats'
-            }
-            stats_result = run_algo("native:joinattributesbylocation", stats_params, feedback=feedback)
-            stats_layer = stats_result['OUTPUT']
+        # Step 5: Calculate statistics for each hotspot
+        stats_layer_path = 'memory:hotspots_with_stats'
+        stats_params = {
+            'INPUT': dissolved_layer,
+            'JOIN': merged_layer,
+            'PREDICATE': [0],  # Intersects
+            'JOIN_FIELDS': [output_field_name],
+            'SUMMARIES': [5, 6],  # Count, Mean
+            'DISCARD_NONMATCHING': True,
+            'OUTPUT': stats_layer_path
+        }
+        stats_result = run_algo("native:joinattributesbylocation", stats_params, feedback=feedback)
+        stats_layer = stats_result['OUTPUT']
 
-            # Rename fields for clarity
-            stats_layer.startEditing()
-            count_field_idx = stats_layer.fields().lookupField(f'{output_field_name}_count')
-            mean_field_idx = stats_layer.fields().lookupField(f'{output_field_name}_mean')
+        # Rename fields for clarity
+        stats_layer.startEditing()
+        stats_layer.renameAttribute(stats_layer.fields().lookupField(f'{output_field_name}_count'), 'pipe_count')
+        stats_layer.renameAttribute(stats_layer.fields().lookupField(f'{output_field_name}_mean'), 'avg_renewal_need')
+        stats_layer.commitChanges()
 
-            if count_field_idx != -1:
-                stats_layer.renameAttribute(count_field_idx, 'pipe_count')
-            if mean_field_idx != -1:
-                stats_layer.renameAttribute(mean_field_idx, 'avg_renewal_need')
+        # Final styling
+        symbol = QgsFillSymbol.createSimple({'color': '255,0,0,70', 'outline_color': 'red', 'outline_width': '0.5'})
+        stats_layer.renderer().setSymbol(symbol)
+        stats_layer.setName(tr("Hotspots"))
 
-            stats_layer.commitChanges()
-
-            # Apply styling
-            symbol = QgsFillSymbol.createSimple({
-                'color': '255,0,0,70',
-                'outline_color': 'red',
-                'outline_width': '0.5'
-            })
-            stats_layer.renderer().setSymbol(symbol)
-            stats_layer.setName(tr("Hotspots"))
-
-            return stats_layer
-
-        except Exception as e:
-            QgsMessageLog.logMessage(
-                f"Hotspot analysis failed: {e}",
-                'reneW', Qgis.Critical
-            )
-            self.iface.messageBar().pushMessage(
-                tr("Error"),
-                tr("Hotspot analysis failed: {0}").format(str(e)),
-                Qgis.Critical
-            )
-            return None
+        return stats_layer
