@@ -35,6 +35,7 @@ from qgis.core import (
 # Import the code for the dialog and the calculation logic
 from .reneW_dialog import ReneWDialog
 from .results_dialog import ResultsDialog
+from .hotspot_explorer_dialog import HotspotExplorerDialog
 from . import calculation_logic
 from . import material_lookup
 
@@ -417,6 +418,7 @@ class ReneW:
             )
             if hotspot_layer:
                 QgsProject.instance().addMapLayer(hotspot_layer)
+                hotspot_layer.selectionChanged.connect(lambda ids, _, __: self._open_hotspot_explorer(hotspot_layer, ids, analysis_configs))
                 self.iface.messageBar().pushMessage(
                     tr("Success"),
                     tr("Hotspot analysis complete."),
@@ -635,6 +637,7 @@ class ReneW:
             )
             if hotspot_layer:
                 QgsProject.instance().addMapLayer(hotspot_layer)
+                hotspot_layer.selectionChanged.connect(lambda ids, _, __: self._open_hotspot_explorer(hotspot_layer, ids, analysis_configs))
                 self.iface.messageBar().pushMessage(
                     tr("Success"),
                     tr("Hotspot analysis complete."),
@@ -832,6 +835,42 @@ class ReneW:
             QgsMessageLog.logMessage(f"Could not rename hotspot fields: {e}", 'reneW', Qgis.Warning)
         stats_layer.commitChanges()
 
+        # Enrich hotspots with contributing pipe info
+        stats_layer.startEditing()
+        pipe_ids_idx = stats_layer.fields().indexFromName("pipe_ids")
+        if pipe_ids_idx == -1:
+            stats_layer.addAttribute(QgsField("pipe_ids", QVariant.String))
+            pipe_ids_idx = stats_layer.fields().indexFromName("pipe_ids")
+        material_idx = stats_layer.fields().indexFromName("materials")
+        if material_idx == -1:
+            stats_layer.addAttribute(QgsField("materials", QVariant.String))
+            material_idx = stats_layer.fields().indexFromName("materials")
+        length_idx = stats_layer.fields().indexFromName("length_km")
+        if length_idx == -1:
+            stats_layer.addAttribute(QgsField("length_km", QVariant.Double))
+            length_idx = stats_layer.fields().indexFromName("length_km")
+        stats_layer.updateFields()
+
+        for hotspot in stats_layer.getFeatures():
+            # collect contributing pipes
+            intersecting = [f for f in merged_layer.getFeatures(QgsFeatureRequest().setFilterRect(hotspot.geometry().boundingBox())) if f.geometry().intersects(hotspot.geometry())]
+            pipe_ids = [str(f.id()) for f in intersecting]
+            materials = {}
+            total_length = 0.0
+            for f in intersecting:
+                # This assumes 'material_field' is present in the merged layer.
+                # A more robust implementation would get the material field name from the config.
+                mat = str(f["material"]) if "material" in f.attributeMap() else "Unknown"
+                materials[mat] = materials.get(mat, 0) + 1
+                if f.geometry().length() > 0:
+                    total_length += f.geometry().length() / 1000.0  # convert to km
+
+            stats_layer.changeAttributeValue(hotspot.id(), pipe_ids_idx, ",".join(pipe_ids))
+            stats_layer.changeAttributeValue(hotspot.id(), material_idx, ", ".join([f"{m}:{c}" for m, c in materials.items()]))
+            stats_layer.changeAttributeValue(hotspot.id(), length_idx, total_length)
+        stats_layer.commitChanges()
+
+
         # --- Rule-based Styling for Hotspots ---
         from qgis.core import QgsRuleBasedRenderer, QgsSymbol
 
@@ -866,3 +905,45 @@ class ReneW:
 
         QgsMessageLog.logMessage("Hotspot analysis finished successfully", 'reneW', Qgis.Success)
         return stats_layer
+
+    def _open_hotspot_explorer(self, hotspot_layer, selected_ids, analysis_configs):
+        if not selected_ids:
+            return
+        feature = hotspot_layer.getFeature(selected_ids[0])
+        pipe_ids_str = feature["pipe_ids"]
+        pipe_ids = [int(pid) for pid in pipe_ids_str.split(",") if pid.strip().isdigit()]
+        materials = feature["materials"]
+        length_km = feature["length_km"]
+        pipe_count = feature["pipe_count"]
+        avg_need = feature["avg_renewal_need"]
+
+        # Calculate average age
+        ages = []
+        for config in analysis_configs:
+            # This assumes that the pipe IDs are unique across all layers in the analysis.
+            # A more robust implementation might need to store layer ID along with pipe ID.
+            layer = config['layer']
+            year_field = config['year_field']
+            for pid in pipe_ids:
+                try:
+                    pipe_feature = layer.getFeature(pid)
+                    year_val = pipe_feature[year_field]
+                    install_year = int(year_val)
+                    age = datetime.now().year - install_year
+                    ages.append(age)
+                except:
+                    # Feature not in this layer or other error, continue
+                    continue
+
+        avg_age = sum(ages) / len(ages) if ages else 0
+
+        # Open dialog
+        dlg = HotspotExplorerDialog(self.iface.mainWindow())
+        dlg.populate(feature.id(), pipe_ids_str, materials, length_km, pipe_count, avg_need, avg_age)
+        dlg.setLayer(hotspot_layer)
+        # For simplicity, we assume the first layer in the config is the pipe layer.
+        # This might need to be improved if multiple pipe layers are used.
+        if analysis_configs:
+            dlg.setPipeLayer(analysis_configs[0]['layer'])
+        dlg.setContributingPipes(pipe_ids)
+        dlg.exec()
