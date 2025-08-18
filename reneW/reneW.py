@@ -678,8 +678,10 @@ class ReneW:
                 # Rule expression
                 expr = f"\"pipe_type\" = '{pipe_type}' AND \"renewal_need\" >= {low} AND \"renewal_need\" < {high}"
 
-                # Must use positional args in QGIS 3.99
-                rule = QgsRuleBasedRenderer.Rule(symbol, expr, f"{pipe_type} – {label}")
+                # Safe rule creation for QGIS 3.99
+                rule = QgsRuleBasedRenderer.Rule(symbol)
+                rule.setFilterExpression(expr)
+                rule.setLabel(f"{pipe_type} – {label}")
                 root_rule.appendChild(rule)
 
         renderer = QgsRuleBasedRenderer(root_rule)
@@ -768,8 +770,29 @@ class ReneW:
         stats_layer.commitChanges()
 
         # Final styling
-        symbol = QgsFillSymbol.createSimple({'color': '255,0,0,70', 'outline_color': 'red', 'outline_width': '0.5'})
-        stats_layer.renderer().setSymbol(symbol)
+        # Root rule
+        base_symbol = QgsFillSymbol.createSimple({})
+        root_rule = QgsRuleBasedRenderer.Rule(base_symbol)
+
+        # Moderate hotspot rule
+        moderate_symbol = QgsFillSymbol.createSimple({'color': '255,255,0,120', 'outline_color': 'black', 'outline_width': '0.3'})
+        expr_moderate = "\"avg_renewal_need\" >= 0.5 AND \"avg_renewal_need\" < 0.75"
+        rule_moderate = QgsRuleBasedRenderer.Rule(moderate_symbol)
+        rule_moderate.setFilterExpression(expr_moderate)
+        rule_moderate.setLabel("Moderate Hotspot (0.5 – 0.75)")
+        root_rule.appendChild(rule_moderate)
+
+        # Severe hotspot rule
+        severe_symbol = QgsFillSymbol.createSimple({'color': '255,0,0,120', 'outline_color': 'black', 'outline_width': '0.5'})
+        expr_severe = "\"avg_renewal_need\" >= 0.75"
+        rule_severe = QgsRuleBasedRenderer.Rule(severe_symbol)
+        rule_severe.setFilterExpression(expr_severe)
+        rule_severe.setLabel("Severe Hotspot (>= 0.75)")
+        root_rule.appendChild(rule_severe)
+
+        # Apply renderer
+        renderer = QgsRuleBasedRenderer(root_rule)
+        stats_layer.setRenderer(renderer)
         stats_layer.setName(tr("Hotspots"))
 
         return stats_layer
