@@ -211,8 +211,14 @@ class ReneWDialog(QDialog, FORM_CLASS):
         configs = []
         for tab in self.tabs:
             if tab['check'].isChecked() and tab['layer_combo'].currentLayer():
+                type_name = tab['name']
+                if type_name == "stormwater":
+                    type_name = "sewer/storm"
+                elif type_name == "sewer":
+                    type_name = "sewer/spill"
+
                 configs.append({
-                    'type': tab['name'],
+                    'type': type_name,
                     'layer': tab['layer_combo'].currentLayer(),
                     'municipality_field': tab['muni_combo'].currentField(),
                     'material_field': tab['mat_combo'].currentField(),
