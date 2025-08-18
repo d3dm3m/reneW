@@ -624,7 +624,7 @@ class ReneW:
         """
         Apply styling to the temporal renewal need layer.
         Compatible with QGIS 3.99 (Qt6 / Python 3.12).
-        Adds halos matching pipe type to make risks stand out visually.
+        Adds halos matching pipe type and scales halo thickness by risk level.
         """
         from qgis.core import QgsRuleBasedRenderer, QgsSymbol
         from qgis.PyQt.QtGui import QColor
@@ -649,17 +649,17 @@ class ReneW:
             "storm": QColor("green"),
         }
 
-        # Risk buckets
+        # Risk buckets (low, high, label, halo width)
         buckets = [
-            (0.0, 0.3, "Low Risk"),
-            (0.3, 0.6, "Medium Risk"),
-            (0.6, 1.0, "High Risk"),
+            (0.0, 0.3, "Low Risk", 0.4),
+            (0.3, 0.6, "Medium Risk", 0.8),
+            (0.6, 1.0, "High Risk", 1.2),
         ]
 
         for pipe_type in unique_types:
             base_color = base_colors.get(str(pipe_type).lower(), QColor("gray"))
 
-            for (low, high, label) in buckets:
+            for (low, high, label, halo_width) in buckets:
                 # Create a symbol for this pipe type + risk bucket
                 symbol = QgsSymbol.defaultSymbol(temporal_layer.geometryType())
                 color = QColor(base_color)
@@ -668,14 +668,17 @@ class ReneW:
 
                 symbol.setColor(color)
 
-                # Add halo (outline) in same pipe-type color
-                symbol.symbolLayer(0).setStrokeColor(base_color)
-                symbol.symbolLayer(0).setStrokeWidth(0.8)
+                # Add halo (outline) in same pipe-type color, scale thickness by risk
+                layer0 = symbol.symbolLayer(0)
+                if hasattr(layer0, "setStrokeColor"):
+                    layer0.setStrokeColor(base_color)
+                if hasattr(layer0, "setWidth"):  # QGIS 3.99 compatible
+                    layer0.setWidth(halo_width)
 
                 # Rule expression
                 expr = f"\"pipe_type\" = '{pipe_type}' AND \"renewal_need\" >= {low} AND \"renewal_need\" < {high}"
 
-                # NOTE: must use positional args (expr, label) instead of keywords
+                # Must use positional args in QGIS 3.99
                 rule = QgsRuleBasedRenderer.Rule(symbol, expr, f"{pipe_type} – {label}")
                 root_rule.appendChild(rule)
 
