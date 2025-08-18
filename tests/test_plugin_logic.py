@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from reneW.reneW import ReneW
 from reneW.calculation_logic import MaterialParams
+from qgis.core import QgsPointXY, QgsGeometry
 
 class TestReneWPluginLogic(unittest.TestCase):
     """Test suite for the main plugin logic in the ReneW class."""
@@ -82,6 +83,63 @@ class TestReneWPluginLogic(unittest.TestCase):
         last_feature_mock = mock_provider.addFeature.call_args_list[-1][0][0]
         last_feature_attrs = last_feature_mock.setAttributes.call_args[0][0]
         self.assertEqual(last_feature_attrs[2], 2045) # year attribute
+
+    @patch('reneW.reneW.datetime')
+    @patch('reneW.reneW.QgsSpatialIndex')
+    @patch('reneW.reneW.QgsFeatureRequest')
+    def test_infer_year_from_properties_logic(self, mock_qgs_feature_request, mock_qgs_spatial_index, mock_datetime):
+        """Test the core logic of _infer_year_from_properties directly."""
+        # --- Mocks & Setup ---
+        mock_datetime.now.return_value.year = 2024
+
+        # 1. Mock Pipe Feature
+        mock_pipe_feature = MagicMock()
+        mock_geom = MagicMock()
+        mock_geom.isEmpty.return_value = False
+        mock_geom.length.return_value = 100.0
+        mock_point_geom = MagicMock()
+        mock_point_geom.asPoint.return_value = QgsPointXY(10, 10)
+        mock_point_geom.isEmpty.return_value = False
+        mock_geom.interpolate.return_value = mock_point_geom
+        mock_pipe_feature.geometry.return_value = mock_geom
+
+        # 2. Mock Property Layer
+        mock_prop_layer = MagicMock()
+        mock_prop_features = []
+        for i, year in enumerate([1980, 1995, 1982, 2050, None]): # Include invalid year and None
+            feat = MagicMock()
+            feat.id.return_value = i
+            # This is key: the attribute call must be mocked correctly
+            feat.attribute.return_value = year
+            prop_geom = MagicMock()
+            prop_geom.isEmpty.return_value = False
+            feat.geometry.return_value = prop_geom
+            mock_prop_features.append(feat)
+
+        # When getFeatures is called on the prop layer, return our list
+        mock_prop_layer.getFeatures.return_value = mock_prop_features
+        mock_prop_layer.fields.return_value.indexFromName.return_value = 1 # 'prop_year_idx'
+
+        # 3. Mock Spatial Index to return FIDs of all our mock features
+        mock_index_instance = mock_qgs_spatial_index.return_value
+        mock_index_instance.nearestNeighbor.return_value = [0, 1, 2, 3, 4]
+
+        # --- Action ---
+        inferred_year = self.plugin._infer_year_from_properties(
+            mock_pipe_feature, mock_prop_layer, 'prop_year', 5
+        )
+
+        # --- Assertions ---
+        # The method should find neighbours for the sample point
+        mock_index_instance.nearestNeighbor.assert_called()
+
+        # It should request the features for the found FIDs
+        mock_qgs_feature_request.return_value.setFilterFids.assert_called_with([0, 1, 2, 3, 4])
+        mock_prop_layer.getFeatures.assert_called()
+
+        # The valid years are [1980, 1995, 1982]. 2050 is in the future, None is skipped.
+        # The median of [1980, 1982, 1995] is 1982.
+        self.assertEqual(inferred_year, 1982)
 
 
 if __name__ == '__main__':

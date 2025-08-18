@@ -29,7 +29,10 @@ from qgis.core import (
     QgsRuleBasedRenderer,
     QgsStyle,
     QgsClassificationQuantile,
-    QgsRendererCategory
+    QgsRendererCategory,
+    QgsSpatialIndex,
+    QgsGeometry,
+    QgsPointXY
 )
 
 # Import the code for the dialog and the calculation logic
@@ -116,6 +119,142 @@ class ReneW:
         if match:
             return float(match.group(1))
         return 0.0
+
+    # --- Imputation: property-based year inference --------------------------
+    def _get_property_layer_config(self):
+        """
+        Safely fetch property layer + year field + parameters from the dialog.
+        Returns (layer, year_field_name, k_neighbors:int, fractions:list[float]) or (None, None, 0, []) if unavailable.
+        """
+        # These dialog getters should exist; if not, we guard with hasattr to avoid runtime errors
+        prop_layer = self.dlg.propertyLayer() if hasattr(self.dlg, "propertyLayer") else None
+        prop_year_field = self.dlg.propertyYearField() if hasattr(self.dlg, "propertyYearField") else None
+        k_neighbors = self.dlg.propertyKNeighbors() if hasattr(self.dlg, "propertyKNeighbors") else 15
+        fractions = self.dlg.propertySampleFractions() if hasattr(self.dlg, "propertySampleFractions") else [0.0, 0.25, 0.5, 0.75, 1.0]
+
+        # Basic validity check
+        if not prop_layer or not prop_year_field:
+            return (None, None, 0, [])
+        if prop_layer.fields().indexFromName(prop_year_field) == -1:
+            return (None, None, 0, [])
+        return (prop_layer, prop_year_field, int(max(1, k_neighbors)), list(fractions))
+
+    def _build_property_spatial_index(self, prop_layer):
+        """
+        Build (and cache) a spatial index for the property points.
+        Cache by layer ID to avoid rebuilding each run.
+        """
+        if not hasattr(self, "_prop_index_cache"):
+            self._prop_index_cache = {}
+        lid = prop_layer.id()
+        if lid in self._prop_index_cache:
+            return self._prop_index_cache[lid]
+
+        idx = QgsSpatialIndex()
+        fid_list = []
+        for f in prop_layer.getFeatures():
+            if not f.geometry() or f.geometry().isEmpty():
+                continue
+            idx.addFeature(f)
+            fid_list.append(f.id())
+
+        self._prop_index_cache[lid] = (idx, set(fid_list))
+        return self._prop_index_cache[lid]
+
+    def _sample_points_along_line(self, geom: QgsGeometry, fractions):
+        """
+        Returns a list of QgsPointXY sampled along a line geometry at the given fractional distances.
+        Fractions are clamped to [0,1]. Multi-part lines are supported by using total length and interpolate().
+        """
+        pts = []
+        if not geom or geom.isEmpty() or geom.length() <= 0:
+            return pts
+        total_len = geom.length()
+        for frac in fractions:
+            try:
+                t = max(0.0, min(1.0, float(frac)))
+            except Exception:
+                continue
+            d = t * total_len
+            try:
+                pgeom = geom.interpolate(d)
+                if pgeom and not pgeom.isEmpty():
+                    pt = pgeom.asPoint()
+                    pts.append(QgsPointXY(pt))
+            except Exception:
+                # interpolate can fail on some geometry types; skip gracefully
+                continue
+        return pts
+
+    def _median(self, values):
+        """Simple median for a list of numeric values; returns None if empty."""
+        vals = sorted(v for v in values if v is not None)
+        n = len(vals)
+        if n == 0:
+            return None
+        mid = n // 2
+        if n % 2 == 1:
+            return vals[mid]
+        return (vals[mid - 1] + vals[mid]) / 2.0
+
+    def _infer_year_from_properties(self, pipe_feat, prop_layer, year_field_name, k_neighbors=15, fractions=None):
+        """
+        For a pipe feature with missing year, infer via nearest property points around multiple
+        samples along its length. Returns an int year or None if it cannot infer.
+        """
+        if not prop_layer or not year_field_name:
+            return None
+
+        # Build or reuse index
+        idx, fid_cache = self._build_property_spatial_index(prop_layer)
+        year_idx = prop_layer.fields().indexFromName(year_field_name)
+        if year_idx == -1:
+            return None
+
+        # Sample points along the pipe
+        geom = pipe_feat.geometry()
+        fractions = fractions or [0.0, 0.25, 0.5, 0.75, 1.0]
+        sample_pts = self._sample_points_along_line(geom, fractions)
+        if not sample_pts:
+            return None
+
+        # Gather nearest property years across all samples
+        years = []
+        prov = prop_layer.dataProvider()
+        for pt in sample_pts:
+            try:
+                # nearestNeighbor returns FIDs
+                fids = idx.nearestNeighbor(pt, k_neighbors)
+                if not fids:
+                    continue
+                # Filter by actual existing fids in cache (stability)
+                fids = [fid for fid in fids if fid in fid_cache]
+                if not fids:
+                    continue
+                req = QgsFeatureRequest().setFilterFids(fids)
+                for pf in prop_layer.getFeatures(req):
+                    yv = pf.attribute(year_idx)
+                    if yv in (None, ''):
+                        continue
+                    try:
+                        y = int(yv)
+                        # Basic sanity: ignore absurd/sentinel values
+                        if 1800 <= y <= datetime.now().year + 1:
+                            years.append(y)
+                    except Exception:
+                        continue
+            except Exception:
+                # Continue if NN query fails for any sampled point
+                continue
+
+        if not years:
+            return None
+
+        m = self._median(years)
+        if m is None:
+            return None
+        # Return rounded integer median
+        return int(round(m))
 
     def _calculate_score(self, pipe_type, feature, pipe_age, dim_field=None):
         """
@@ -287,6 +426,13 @@ class ReneW:
             muni_idx = fields.indexFromName(config['municipality_field']) if config.get('municipality_field') else -1
             output_idx = fields.indexFromName(output_field_name)
 
+            # Ensure a flag field exists (optional)
+            flag_field_name = "year_imputed"
+            if fields.indexFromName(flag_field_name) == -1:
+                provider.addAttributes([QgsField(flag_field_name, QVariant.Int)])
+                layer.updateFields()
+            flag_idx = fields.indexFromName(flag_field_name)
+
             layer.startEditing()
             for feature in layer.getFeatures():
                 processed_features += 1
@@ -297,11 +443,30 @@ class ReneW:
                     continue
 
                 year_val = attrs[field_indices['year_field']]
-                if year_val is None or str(year_val).strip() in ['1900', 'null', 'NULL']:
-                    continue
+
+                # Try to parse installation year
+                installation_year = None
                 try:
-                    installation_year = int(year_val)
+                    if year_val is not None and str(year_val).strip().lower() not in ['null', '']:
+                        y = int(year_val)
+                        installation_year = y if y != 1900 else None
                 except (ValueError, TypeError):
+                    installation_year = None
+
+                # If missing, try property-based imputation
+                if installation_year is None:
+                    prop_layer, prop_year_field, k_neighbors, fractions = self._get_property_layer_config()
+                    if prop_layer and prop_year_field and k_neighbors > 0 and fractions:
+                        inferred = self._infer_year_from_properties(
+                            feature, prop_layer, prop_year_field, k_neighbors, fractions
+                        )
+                        if inferred is not None:
+                            installation_year = inferred
+                            # mark this feature as imputed
+                            layer.changeAttributeValue(feature.id(), flag_idx, 1)
+
+                # If still missing, skip this feature
+                if installation_year is None:
                     continue
 
                 effective_install_year = installation_year
@@ -523,12 +688,25 @@ class ReneW:
                 attrs = feature.attributes()
 
                 year_val = attrs[field_indices['year_field']]
-                if year_val is None or str(year_val).strip() in ['1900', 'null', 'NULL']:
-                    continue
 
+                installation_year = None
                 try:
-                    installation_year = int(year_val)
+                    if year_val is not None and str(year_val).strip().lower() not in ['null', '']:
+                        y = int(year_val)
+                        installation_year = y if y != 1900 else None
                 except (ValueError, TypeError):
+                    installation_year = None
+
+                if installation_year is None:
+                    prop_layer, prop_year_field, k_neighbors, fractions = self._get_property_layer_config()
+                    if prop_layer and prop_year_field and k_neighbors > 0 and fractions:
+                        inferred = self._infer_year_from_properties(
+                            feature, prop_layer, prop_year_field, k_neighbors, fractions
+                        )
+                        if inferred is not None:
+                            installation_year = inferred
+
+                if installation_year is None:
                     continue
 
                 effective_install_year = installation_year
