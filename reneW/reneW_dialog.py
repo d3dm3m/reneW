@@ -1,12 +1,225 @@
 import os
 import json
 from datetime import datetime
+import re
+import unicodedata
+
+from qgis.core import QgsProject, Qgis, QgsMessageLog, QgsMapLayerProxyModel, QgsVectorLayer
 from qgis.PyQt.QtWidgets import QDialog, QDialogButtonBox, QWidget, QVBoxLayout, QCheckBox, QGroupBox, QGridLayout, QLabel, QFormLayout, QDoubleSpinBox, QSpinBox
 from qgis.PyQt.QtCore import QSettings
 from qgis.PyQt import uic
-from qgis.core import QgsMapLayerProxyModel, QgsProject, QgsVectorLayer
 from qgis.gui import QgsFieldComboBox, QgsMapLayerComboBox
 from .parameter_editor_dialog import ParameterEditorDialog
+
+# -----------------------------
+# SMART KEYWORD CATALOG (FRAGMENTS)
+# -----------------------------
+
+# Layer classification (by layer name). Avoid "avlopp" because it can mean spill or storm.
+LAYER_HINTS = {
+    "water": [
+        "vatten", "drick", "dricksvatten", "water", "potable", "tap",
+        "clean", "tryckvatten", "pressurewater", "vattenledning", "v-led"
+    ],
+    "wastewater": [
+        "spill", "spillv", "spillvatten", "sanitary", "foul", "waste", "wastewater",
+        "sewer", "sw", "san", "spill-led", "spillledning", "spillled"
+    ],
+    "stormwater": [
+        "storm", "stormwater", "dagv", "dagvatten", "rain", "drain", "surface",
+        "stormdrain", "storm sewer", "stormledning", "d-led"
+    ],
+}
+
+# Field roles we try to detect. Each list contains *fragments* (substring/prefix match).
+FIELD_HINTS_UNIVERSAL = {
+    "material_field": [
+        "material", "mat", "mater", "matl", "rörmat", "rormat", "rortyp", "pipe_mat",
+        "pipemat", "matklass", "matclass", "materialtyp", "mtrl"
+    ],
+    "year_field": [
+        "year", "yr", "bygg", "bygr", "install", "inst", "lägg", "lagg",
+        "construction", "construct", "constr", "built", "build", "anl", "anlag"
+    ],
+    "dimension_field": [
+        "dim", "dimension", "diam", "diameter", "dn", "size", "storlek",
+        "innerdia", "inner_dia", "invand", "inv", "od", "id", "ytter", "utv"
+    ],
+    "municipality_field": [
+        "kommun", "kommunkod", "kommun_kod", "muni", "municip", "municipality",
+        "city", "stad", "knr", "komkod"
+    ],
+}
+
+# Extra hints by pipe type
+FIELD_HINTS_BY_TYPE = {
+    "water": {
+        "year_field": ["tryck", "press"],  # often pressurized networks carry install dates
+    },
+    "wastewater": {
+        "reno_year_field": ["reno", "renov", "rehab", "reha", "lining", "cipp",
+                            "relining", "spraylin", "burst", "bursting", "renover"],
+        "reno_method_field": ["method", "metod", "liner", "lining", "cipp",
+                              "relining", "strump", "strumpinf", "schaktfri", "no-dig"],
+    },
+    "stormwater": {
+        # nothing extra mandatory
+    },
+}
+
+# Value heuristics
+YEAR_MIN, YEAR_MAX = 1850, 2100
+DIM_MM_MIN, DIM_MM_MAX = 20, 4000  # mm range (typical pipes)
+SAMPLE_CHECK = 80  # number of features to glance at when inferring value ranges
+
+
+# -----------------------------
+# NORMALIZATION HELPERS
+# -----------------------------
+def _strip_accents(s: str) -> str:
+    try:
+        return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
+    except Exception:
+        return s
+
+def _norm(s: str) -> str:
+    if s is None:
+        return ""
+    s = str(s).lower()
+    s = _strip_accents(s)
+    s = s.replace("_", "").replace("-", "").strip()
+    s = re.sub(r"\s+", "", s)
+    return s
+
+
+# -----------------------------
+# LOG HELPER
+# -----------------------------
+def _log(msg: str):
+    QgsMessageLog.logMessage(msg, "reneW", Qgis.Info)
+
+# -----------------------------
+# LAYER SCORING
+# -----------------------------
+def _score_layer_for_pipe_type(layer, pipe_type: str) -> int:
+    """Score a layer for a given pipe type using name hints + field presence."""
+    score = 0
+    lname = _norm(layer.name())
+
+    # Name-based scoring
+    for frag in LAYER_HINTS.get(pipe_type, []):
+        if _norm(frag) in lname:
+            score += 10
+
+    # Field presence weak hints (e.g., having dimension + material is common)
+    f_names = [_norm(f.name()) for f in layer.fields()]
+    if any(k in f_names for k in ["material", "mat", "matl", "rormat", "rortyp", "pipemat"]):
+        score += 2
+    if any(k in f_names for k in ["dim", "diam", "diameter", "dn", "size"]):
+        score += 2
+    if any(k in f_names for k in ["year", "yr", "bygg", "install", "construct", "built"]):
+        score += 2
+
+    return score
+
+
+def _pick_best_layer(pipe_type: str):
+    best = None
+    best_score = 0
+    for layer in QgsProject.instance().mapLayers().values():
+        if not isinstance(layer, QgsVectorLayer):
+            continue
+        sc = _score_layer_for_pipe_type(layer, pipe_type)
+        if sc > best_score:
+            best, best_score = layer, sc
+    return best, best_score
+
+
+# -----------------------------
+# FIELD SCORING
+# -----------------------------
+def _sample_field_values_numeric(layer, field_name: str, limit=SAMPLE_CHECK):
+    """Return (min, max, count_numeric) from first N features for the field, or (None, None, 0)."""
+    idx = layer.fields().indexFromName(field_name)
+    if idx < 0:
+        return (None, None, 0)
+    mn = None
+    mx = None
+    cnt = 0
+    for i, f in enumerate(layer.getFeatures()):
+        if i >= limit:
+            break
+        v = f[idx]
+        if isinstance(v, (int, float)):
+            cnt += 1
+            if mn is None or v < mn:
+                mn = v
+            if mx is None or v > mx:
+                mx = v
+    return (mn, mx, cnt)
+
+
+def _score_field_for_role(layer, field, role: str, pipe_type: str) -> int:
+    """
+    Score a single field for a role: material/year/dimension/reno_year/reno_method/municipality.
+    Heuristics: name fragments, type, and sampled values.
+    """
+    score = 0
+    fname = field.name()
+    fnorm = _norm(fname)
+
+    # 1) Name fragments — universal + per-type extras
+    frags = list(FIELD_HINTS_UNIVERSAL.get(role, []))
+    frags += FIELD_HINTS_BY_TYPE.get(pipe_type, {}).get(role, [])
+    for frag in frags:
+        frag_norm = _norm(frag)
+        if fnorm.startswith(frag_norm):
+            score += 6  # strong prefix match
+        elif frag_norm in fnorm:
+            score += 4  # substring match
+
+    # 2) Type hints
+    qvtype = field.type()  # QVariant type enum
+    qvt_is_str = qvtype in (10, 12, 13)  # String, StringList, etc (varies across QGIS)
+    qvt_is_num = qvtype in (2, 3, 4, 5, 6, 8)  # Int/Double types variants
+
+    if role in ("material_field", "reno_method_field", "municipality_field"):
+        if qvt_is_str:
+            score += 3
+        else:
+            score -= 2
+
+    if role in ("year_field", "reno_year_field"):
+        if qvt_is_num:
+            score += 3
+        # Value range check
+        mn, mx, cnt = _sample_field_values_numeric(layer, fname)
+        if cnt > 0:
+            if mn is not None and mx is not None:
+                if (YEAR_MIN <= (mn or YEAR_MIN) <= YEAR_MAX) or (YEAR_MIN <= (mx or YEAR_MAX) <= YEAR_MAX):
+                    score += 3
+
+    if role == "dimension_field":
+        if qvt_is_num:
+            score += 3
+            mn, mx, cnt = _sample_field_values_numeric(layer, fname)
+            if cnt > 0 and mn is not None and mx is not None:
+                # Accept a broad mm range
+                if (DIM_MM_MIN <= mn <= DIM_MM_MAX) or (DIM_MM_MIN <= mx <= DIM_MM_MAX):
+                    score += 3
+
+    return score
+
+
+def _pick_best_field(layer, role: str, pipe_type: str, min_score: int = 5):
+    """Return best (field_name, score) for role, or (None, 0) if nothing good enough."""
+    best = None
+    best_score = 0
+    for field in layer.fields():
+        sc = _score_field_for_role(layer, field, role, pipe_type)
+        if sc > best_score:
+            best, best_score = field.name(), sc
+    return (best, best_score) if best_score >= min_score else (None, 0)
 
 # This loads your .ui file
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -110,6 +323,10 @@ class ReneWDialog(QDialog, FORM_CLASS):
         self.mTemporalGroupBox.toggled[bool].connect(self._validate_inputs)
         self.mTemporalStartYearSpinBox.valueChanged.connect(self._validate_inputs)
         self.mTemporalEndYearSpinBox.valueChanged.connect(self._validate_inputs)
+        try:
+            self.btnAutoDetect.clicked.connect(self._auto_detect_layers_fields)
+        except Exception:
+            pass  # button not present in UI -> safe no-op
 
         # --- Set initial validation state ---
         self._validate_inputs()
@@ -205,6 +422,77 @@ class ReneWDialog(QDialog, FORM_CLASS):
         self._create_dynamic_tabs()
         self._populate_municipality_filter()
         self._validate_inputs()
+
+    def _apply_detected_to_ui(self, pipe_type: str, layer, picks: dict):
+        """
+        Map detected layer/fields into the dialog widgets.
+        """
+        tab_name_map = {
+            "water": "water",
+            "wastewater": "sewer",
+            "stormwater": "stormwater"
+        }
+        target_tab_name = tab_name_map.get(pipe_type)
+        if not target_tab_name:
+            return
+
+        for tab in self.tabs:
+            if tab['name'] == target_tab_name:
+                tab['check'].setChecked(True)
+                if layer:
+                    tab['layer_combo'].setLayer(layer)
+
+                field_map = {
+                    "material_field": "mat_combo",
+                    "year_field": "year_combo",
+                    "dimension_field": "dim_combo",
+                    "municipality_field": "muni_combo",
+                    "reno_year_field": "reno_year_combo",
+                    "reno_method_field": "reno_method_combo"
+                }
+
+                for role, field_name in picks.items():
+                    combo_name = field_map.get(role)
+                    if combo_name and combo_name in tab and field_name:
+                        tab[combo_name].setField(field_name)
+                break
+
+    def _auto_detect_layers_fields(self):
+        """
+        Button action: scan project; pick best layer per pipe type; pick best fields; apply to UI; log what happened.
+        """
+        plan = {
+            "water":      ["material_field", "year_field", "dimension_field", "municipality_field"],
+            "wastewater": ["material_field", "year_field", "dimension_field", "reno_year_field", "reno_method_field", "municipality_field"],
+            "stormwater": ["material_field", "year_field", "dimension_field", "municipality_field"],
+        }
+
+        for pipe_type in ["water", "wastewater", "stormwater"]:
+            layer, lscore = _pick_best_layer(pipe_type)
+            if not layer or lscore == 0:
+                _log(f"[AutoDetect] No good layer candidate for {pipe_type}.")
+                continue
+
+            picks = {}
+            for role in plan[pipe_type]:
+                fname, fscore = _pick_best_field(layer, role, pipe_type)
+                if fname:
+                    picks[role] = fname
+
+            # Apply to UI
+            self._apply_detected_to_ui(pipe_type, layer, picks)
+
+            # Log
+            roles_str = ", ".join([f"{k}:{v}" for k, v in picks.items()]) if picks else "no fields matched"
+            _log(f"[AutoDetect] {pipe_type}: layer='{layer.name()}' (score={lscore}); fields: {roles_str}")
+
+        try:
+            # Use self.iface if available, otherwise assume it's part of the class from which this is called
+            iface = getattr(self, 'iface', None)
+            if iface:
+                iface.messageBar().pushMessage("reneW", "Auto-detection complete.", level=Qgis.Info, duration=4)
+        except Exception as e:
+            _log(f"Could not push message to bar: {e}")
 
     # --- Getters for analysis parameters ---
     def useDimensionWeighting(self) -> bool:
