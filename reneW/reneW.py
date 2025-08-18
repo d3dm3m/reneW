@@ -71,27 +71,29 @@ class ReneW:
         self.dlg = None
         self.results_dialog = None
 
-    def _friendly_pipe_label(self, pipe_type: str) -> str:
-        """Return a user-friendly label for pipe types."""
-        mapping = {
-            'water': 'Water',
-            'sewer/spill': 'Wastewater',
-            'sewer/storm': 'Stormwater'
-        }
-        return mapping.get(pipe_type.lower(), pipe_type)
+    def _pretty_pipe(self, p: str) -> str:
+        """Map canonical pipe_type tokens to nice labels for UI."""
+        return {
+            "water": "Water",
+            "wastewater": "Wastewater",
+            "stormwater": "Stormwater"
+        }.get((p or "").lower(), p)
 
     def _parse_pipe_type(self, pipe_type_name: str):
-        """Normalize pipe type string into (domain, subtype, friendly_type)."""
-        pt = pipe_type_name.lower().strip()
+        """
+        Normalize pipe type string into (domain, subtype, canonical_attr_value).
+        canonical_attr_value is one of: 'water', 'wastewater', 'stormwater'
+        """
+        pt = (pipe_type_name or "").lower().strip()
         if pt == "water":
             return ("water", None, "water")
-        elif pt in ("sewer", "sewer/spill", "wastewater"):
-            return ("sewer", "spill", "sewer")
-        elif pt in ("sewer/storm", "stormwater"):
+        elif pt in ("sewer", "sewer/spill", "wastewater", "spill"):
+            return ("sewer", "spill", "wastewater")
+        elif pt in ("sewer/storm", "storm", "stormwater"):
             return ("sewer", "storm", "stormwater")
         else:
-            # fallback
-            return ("sewer", None, pipe_type_name)
+            # fallback — treat as wastewater to stay conservative
+            return ("sewer", None, "wastewater")
 
     def _handle_zoom_to_feature(self, layer_id, feature_id):
         """Zooms the map canvas to a specific feature."""
@@ -251,7 +253,7 @@ class ReneW:
             QgsMessageLog.logMessage(tr("Processing layer: {0}").format(layer_name), 'reneW', Qgis.Info)
 
             domain, subtype, pipe_type_name = self._parse_pipe_type(config['type'])
-            friendly_pipe = self._friendly_pipe_label(pipe_type_name)
+            friendly_pipe = self._pretty_pipe(pipe_type_name)
 
             output_field_name = 'renewal_need'
             legacy_field_name = 'fornyelsebehov'
@@ -582,9 +584,9 @@ class ReneW:
                     out_feat = QgsFeature(fields)
                     out_feat.setGeometry(feature.geometry())
 
-                    # Create datetime objects for temporal controller
                     start_datetime = QDateTime.fromString(f"{year}-01-01T00:00:00", get_iso_format())
-                    end_datetime = QDateTime.fromString(f"{year + step}-01-01T00:00:00", get_iso_format())
+                    end_year_for_bin = min(year + step, end_year + 1)
+                    end_datetime = QDateTime.fromString(f"{end_year_for_bin}-01-01T00:00:00", get_iso_format())
 
                     material_val = str(attrs[field_indices['material_field']])
                     dimension_val = None
@@ -648,24 +650,15 @@ class ReneW:
         QgsMessageLog.logMessage(tr("reneW temporal analysis finished."), 'reneW', Qgis.Success)
 
     def _configure_temporal_properties(self, temporal_layer):
-        """Configure temporal properties with Qt6 compatibility."""
+        """Configure temporal properties across Qt5/Qt6/QGIS master."""
         temporal_props = temporal_layer.temporalProperties()
 
-        # Qt6 compatible temporal mode setting
-        try:
-            # Try new Qt6 enum first
-            if hasattr(QgsVectorLayerTemporalProperties, 'ModeFeatureDateTimeInstantFromField'):
-                temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeatureDateTimeInstantFromField)
-            elif hasattr(QgsVectorLayerTemporalProperties, 'ModeFeature'):
-                temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeature)
-            else:
-                # Fallback for older versions
-                temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeatureBased)
-        except AttributeError:
-            QgsMessageLog.logMessage(
-                "Could not set temporal mode - using default",
-                'reneW', Qgis.Warning
-            )
+        if hasattr(QgsVectorLayerTemporalProperties, 'ModeFeatureDateTimeStartAndEndFromFields'):
+            temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeatureDateTimeStartAndEndFromFields)
+        elif hasattr(QgsVectorLayerTemporalProperties, 'ModeFeature'):
+            temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeature)
+        else:
+            temporal_props.setMode(QgsVectorLayerTemporalProperties.ModeFeatureBased)
 
         temporal_props.setStartField("start_time")
         temporal_props.setEndField("end_time")
@@ -673,70 +666,70 @@ class ReneW:
 
     def _style_temporal_layer(self, temporal_layer):
         """
-        Apply styling to the temporal renewal need layer.
-        Compatible with QGIS 3.99 (Qt6 / Python 3.12).
-        Adds halos matching pipe type and scales halo thickness by risk level.
+        Rule-based styling for temporal layer.
+        - Colors by pipe type (blue/green/red)
+        - Line pattern by pipe type (water: dotted, stormwater: dash-dot, wastewater: solid)
+        - Halo (outline) matches pipe type color
+        - Risk buckets control opacity and width
+        Compatible with QGIS 3.99 / Qt6 / Py3.12.
         """
         from qgis.core import QgsRuleBasedRenderer, QgsSymbol
         from qgis.PyQt.QtGui import QColor
+        from qgis.PyQt.QtCore import Qt
 
-        # Grab field index for pipe type
         type_field = temporal_layer.fields().lookupField("pipe_type")
         if type_field == -1:
             self.iface.messageBar().pushWarning("reneW", "No 'pipe_type' field found in temporal layer.")
             return
 
-        # Collect unique pipe types
-        unique_types = temporal_layer.uniqueValues(type_field)
+        ALL_TYPES = ("water", "stormwater", "wastewater")
 
-        # Root rule for all categories
-        symbol = QgsSymbol.defaultSymbol(temporal_layer.geometryType())
-        root_rule = QgsRuleBasedRenderer.Rule(symbol)
+        root = QgsRuleBasedRenderer.Rule(QgsSymbol.defaultSymbol(temporal_layer.geometryType()))
 
-        # Risk buckets (low, high, label, halo width)
         buckets = [
-            (0.0, 0.3, "Low Risk", 0.4),
-            (0.3, 0.6, "Medium Risk", 0.8),
-            (0.6, 1.0, "High Risk", 1.2),
+            (0.0, 0.30, "Low Risk",    0.40),
+            (0.30, 0.60, "Medium Risk",0.80),
+            (0.60, 1.01, "High Risk",  1.20),
         ]
 
-        for pipe_type in unique_types:
-            ptype = str(pipe_type).lower()
-            if ptype in ("sewer", "spill", "sewer/spill", "wastewater"):
-                base_color = QColor("red")
-            elif ptype in ("storm", "stormwater"):
-                base_color = QColor("green")
-            elif ptype == "water":
-                base_color = QColor("blue")
-            else:
-                base_color = QColor("gray")
+        PIPE_COLOR = {
+            "water": QColor("blue"),
+            "stormwater": QColor("green"),
+            "wastewater": QColor("red"),
+        }
+        PIPE_PEN = {
+            "water": Qt.PenStyle.DotLine,
+            "stormwater": Qt.PenStyle.DashDotLine,
+            "wastewater": Qt.PenStyle.SolidLine,
+        }
 
-            for (low, high, label, halo_width) in buckets:
-                # Create a symbol for this pipe type + risk bucket
-                symbol = QgsSymbol.defaultSymbol(temporal_layer.geometryType())
+        for ptype in ALL_TYPES:
+            base_color = PIPE_COLOR[ptype]
+            pen_style = PIPE_PEN[ptype]
+
+            for (low, high, label, width_high) in buckets:
+                sym = QgsSymbol.defaultSymbol(temporal_layer.geometryType())
                 color = QColor(base_color)
-                # Opacity based on risk level
-                color.setAlphaF(0.3 + 0.7 * high)
+                alpha = 0.3 + 0.7 * min(high, 1.0)
+                color.setAlphaF(alpha)
+                sym.setColor(color)
 
-                symbol.setColor(color)
+                lyr = sym.symbolLayer(0)
+                if hasattr(lyr, "setStrokeColor"):
+                    lyr.setStrokeColor(base_color)
+                if hasattr(lyr, "setWidth"):
+                    lyr.setWidth(width_high)
+                if hasattr(lyr, "setPenStyle"):
+                    lyr.setPenStyle(pen_style)
 
-                # Add halo (outline) in same pipe-type color, scale thickness by risk
-                layer0 = symbol.symbolLayer(0)
-                if hasattr(layer0, "setStrokeColor"):
-                    layer0.setStrokeColor(base_color)
-                if hasattr(layer0, "setWidth"):  # QGIS 3.99 compatible
-                    layer0.setWidth(halo_width)
+                expr = f"\"pipe_type\" = '{ptype}' AND \"renewal_need\" >= {low} AND \"renewal_need\" < {high}"
 
-                # Rule expression
-                expr = f"\"pipe_type\" = '{pipe_type}' AND \"renewal_need\" >= {low} AND \"renewal_need\" < {high}"
-
-                # Safe rule creation for QGIS 3.99
-                rule = QgsRuleBasedRenderer.Rule(symbol)
+                rule = QgsRuleBasedRenderer.Rule(sym)
                 rule.setFilterExpression(expr)
-                rule.setLabel(f"{pipe_type} – {label}")
-                root_rule.appendChild(rule)
+                rule.setLabel(f"{ptype.capitalize()} – {label}")
+                root.appendChild(rule)
 
-        renderer = QgsRuleBasedRenderer(root_rule)
+        renderer = QgsRuleBasedRenderer(root)
         temporal_layer.setRenderer(renderer)
         temporal_layer.triggerRepaint()
 
@@ -835,39 +828,61 @@ class ReneW:
             QgsMessageLog.logMessage(f"Could not rename hotspot fields: {e}", 'reneW', Qgis.Warning)
         stats_layer.commitChanges()
 
-        # Enrich hotspots with contributing pipe info
+        # Enrich hotspots with contributing pipe info (robust material lookup)
         stats_layer.startEditing()
-        pipe_ids_idx = stats_layer.fields().indexFromName("pipe_ids")
-        if pipe_ids_idx == -1:
-            stats_layer.addAttribute(QgsField("pipe_ids", QVariant.String))
-            pipe_ids_idx = stats_layer.fields().indexFromName("pipe_ids")
-        material_idx = stats_layer.fields().indexFromName("materials")
-        if material_idx == -1:
-            stats_layer.addAttribute(QgsField("materials", QVariant.String))
-            material_idx = stats_layer.fields().indexFromName("materials")
-        length_idx = stats_layer.fields().indexFromName("length_km")
-        if length_idx == -1:
-            stats_layer.addAttribute(QgsField("length_km", QVariant.Double))
-            length_idx = stats_layer.fields().indexFromName("length_km")
-        stats_layer.updateFields()
+
+        def _ensure_field(vl, name, qvariant_type):
+            idx = vl.fields().indexFromName(name)
+            if idx == -1:
+                vl.addAttribute(QgsField(name, qvariant_type))
+                vl.updateFields()
+                idx = vl.fields().indexFromName(name)
+            return idx
+
+        pipe_ids_idx = _ensure_field(stats_layer, "pipe_ids", QVariant.String)
+        material_idx = _ensure_field(stats_layer, "materials", QVariant.String)
+        length_idx = _ensure_field(stats_layer, "length_km", QVariant.Double)
+
+        material_field_candidates = set()
+        for cfg in analysis_configs:
+            mf = cfg.get("material_field")
+            if mf:
+                material_field_candidates.add(mf)
+        material_field_candidates |= {"material", "mat", "materialtyp", "material_type"}
 
         for hotspot in stats_layer.getFeatures():
-            # collect contributing pipes
-            intersecting = [f for f in merged_layer.getFeatures(QgsFeatureRequest().setFilterRect(hotspot.geometry().boundingBox())) if f.geometry().intersects(hotspot.geometry())]
+            geom = hotspot.geometry()
+            intersecting = []
+            for f in merged_layer.getFeatures(QgsFeatureRequest().setFilterRect(geom.boundingBox())):
+                if f.geometry() and f.geometry().intersects(geom):
+                    intersecting.append(f)
+
             pipe_ids = [str(f.id()) for f in intersecting]
-            materials = {}
-            total_length = 0.0
+            materials_count = {}
+            total_length_km = 0.0
+
             for f in intersecting:
-                # This assumes 'material_field' is present in the merged layer.
-                # A more robust implementation would get the material field name from the config.
-                mat = str(f["material"]) if "material" in f.attributeMap() else "Unknown"
-                materials[mat] = materials.get(mat, 0) + 1
-                if f.geometry().length() > 0:
-                    total_length += f.geometry().length() / 1000.0  # convert to km
+                mat_val = "Unknown"
+                for cand in material_field_candidates:
+                    idx = f.fieldNameIndex(cand)
+                    if idx != -1:
+                        mv = f.attributes()[idx]
+                        if mv is not None and str(mv).strip():
+                            mat_val = str(mv)
+                            break
+                materials_count[mat_val] = materials_count.get(mat_val, 0) + 1
+
+                g = f.geometry()
+                if g:
+                    try:
+                        total_length_km += (g.length() / 1000.0)
+                    except Exception:
+                        pass
 
             stats_layer.changeAttributeValue(hotspot.id(), pipe_ids_idx, ",".join(pipe_ids))
-            stats_layer.changeAttributeValue(hotspot.id(), material_idx, ", ".join([f"{m}:{c}" for m, c in materials.items()]))
-            stats_layer.changeAttributeValue(hotspot.id(), length_idx, total_length)
+            stats_layer.changeAttributeValue(hotspot.id(), material_idx, ", ".join([f"{m}:{c}" for m, c in materials_count.items()]))
+            stats_layer.changeAttributeValue(hotspot.id(), length_idx, total_length_km)
+
         stats_layer.commitChanges()
 
 
@@ -938,7 +953,7 @@ class ReneW:
         avg_age = sum(ages) / len(ages) if ages else 0
 
         # Open dialog
-        dlg = HotspotExplorerDialog(self.iface.mainWindow())
+        dlg = HotspotExplorerDialog(self.iface.mainWindow(), iface=self.iface)
         dlg.populate(feature.id(), pipe_ids_str, materials, length_km, pipe_count, avg_need, avg_age)
         dlg.setLayer(hotspot_layer)
         # For simplicity, we assume the first layer in the config is the pipe layer.
