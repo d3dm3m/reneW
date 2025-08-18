@@ -594,6 +594,26 @@ class ReneW:
             Qgis.Info, duration=5
         )
 
+        # --- Hotspot Analysis (for temporal mode) ---
+        hotspot_layer = None
+        if self.dlg.useHotspotAnalysis():
+            hotspot_threshold = self.dlg.hotspotThreshold()
+            hotspot_radius = self.dlg.hotspotRadius()
+            hotspot_layer = self._run_hotspot_analysis(
+                analysis_configs,
+                hotspot_threshold,
+                hotspot_radius,
+                "renewal_need"
+            )
+            if hotspot_layer:
+                QgsProject.instance().addMapLayer(hotspot_layer)
+                self.iface.messageBar().pushMessage(
+                    tr("Success"),
+                    tr("Hotspot analysis complete."),
+                    Qgis.Info,
+                    duration=4
+                )
+
         QgsMessageLog.logMessage(tr("reneW temporal analysis finished."), 'reneW', Qgis.Success)
 
     def _configure_temporal_properties(self, temporal_layer):
@@ -784,9 +804,36 @@ class ReneW:
             QgsMessageLog.logMessage(f"Could not rename hotspot fields: {e}", 'reneW', Qgis.Warning)
         stats_layer.commitChanges()
 
-        # Style hotspots
-        symbol = QgsFillSymbol.createSimple({'color': '255,0,0,70', 'outline_color': 'red', 'outline_width': '0.5'})
-        stats_layer.renderer().setSymbol(symbol)
+        # --- Rule-based Styling for Hotspots ---
+        from qgis.core import QgsRuleBasedRenderer, QgsSymbol
+
+        root_rule = QgsRuleBasedRenderer.Rule(None)
+
+        # Moderate Hotspots (0.5–0.75)
+        moderate_symbol = QgsFillSymbol.createSimple({
+            'color': '255,255,0,100',   # yellow, semi-transparent
+            'outline_color': 'black',
+            'outline_width': '0.5'
+        })
+        rule_moderate = QgsRuleBasedRenderer.Rule(moderate_symbol)
+        rule_moderate.setLabel(tr("Moderate Hotspots"))
+        rule_moderate.setFilterExpression(f"\"avg_renewal_need\" >= 0.5 AND \"avg_renewal_need\" < 0.75")
+        root_rule.appendChild(rule_moderate)
+
+        # Severe Hotspots (>=0.75)
+        severe_symbol = QgsFillSymbol.createSimple({
+            'color': '255,0,0,100',     # red, semi-transparent
+            'outline_color': 'black',
+            'outline_width': '0.5'
+        })
+        rule_severe = QgsRuleBasedRenderer.Rule(severe_symbol)
+        rule_severe.setLabel(tr("Severe Hotspots"))
+        rule_severe.setFilterExpression(f"\"avg_renewal_need\" >= 0.75")
+        root_rule.appendChild(rule_severe)
+
+        # Apply renderer
+        renderer = QgsRuleBasedRenderer(root_rule)
+        stats_layer.setRenderer(renderer)
         stats_layer.setName(tr("Hotspots"))
 
         QgsMessageLog.logMessage("Hotspot analysis finished successfully", 'reneW', Qgis.Success)

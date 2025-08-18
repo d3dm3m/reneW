@@ -28,6 +28,7 @@ class TestReneWPluginLogic(unittest.TestCase):
         # --- Setup Mocks ---
         # Mock dialog settings for a 20-year analysis with a 5-year step
         self.plugin.dlg.useTemporalAnalysis.return_value = True
+        self.plugin.dlg.useHotspotAnalysis.return_value = False  # Disable for this test
         self.plugin.dlg.temporalStartYear.return_value = 2025
         self.plugin.dlg.temporalEndYear.return_value = 2045
         self.plugin.dlg.temporalStep.return_value = 5  # This means 5 steps: 2025, 30, 35, 40, 45
