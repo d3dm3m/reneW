@@ -693,65 +693,76 @@ class ReneW:
     def _run_hotspot_analysis(self, analysis_configs, threshold, distance, output_field_name):
         """
         Runs a hotspot analysis on the layers that have been processed.
+        Adds debug logging to confirm the field used and how many features match.
         """
 
-        # Choose processing runner with graceful fallback
         try:
-            import processing  # QGIS processing plugin
+            import processing
             run_algo = processing.run
         except Exception:
-            # Fallback to core API helper if available
             from qgis.core import QgsProcessing
             run_algo = QgsProcessing.run
+
         feedback = QgsProcessingFeedback()
         high_risk_layers = []
         project_crs = QgsProject.instance().crs()
 
-        # Step 1: Create temporary layers of high-risk features for each input layer
+        QgsMessageLog.logMessage(
+            f"Hotspot analysis started. Using field '{output_field_name}' with threshold {threshold}",
+            'reneW', Qgis.Info
+        )
+
+        # Step 1: Collect high-risk features per layer
         for config in analysis_configs:
             layer = config['layer']
             expr = f"\"{output_field_name}\" >= {threshold}"
+            QgsMessageLog.logMessage(
+                f"Layer {layer.name()}: applying filter {expr}", 'reneW', Qgis.Info
+            )
 
-            # Create a memory layer with only the features matching the expression
+            request = QgsFeatureRequest().setFilterExpression(expr)
+            matching = [f for f in layer.getFeatures(request)]
+            QgsMessageLog.logMessage(
+                f"Layer {layer.name()}: found {len(matching)} matching features", 'reneW', Qgis.Info
+            )
+
+            if not matching:
+                continue
+
             temp_layer = layer.clone()
             temp_layer.setName(f"high_risk_{layer.name()}")
 
-            # Request features with the filter
-            request = QgsFeatureRequest().setFilterExpression(expr)
-
-            # Use a data provider to add features to the temp layer
-            temp_provider = temp_layer.dataProvider()
             temp_layer.startEditing()
-            temp_provider.addFeatures(layer.getFeatures(request))
+            temp_layer.dataProvider().addFeatures(matching)
             temp_layer.commitChanges()
 
             if temp_layer.featureCount() > 0:
                 high_risk_layers.append(temp_layer)
 
         if not high_risk_layers:
-            self.iface.messageBar().pushMessage(tr("Info"), tr("No features found above the risk threshold for hotspot analysis."), Qgis.Info)
+            self.iface.messageBar().pushMessage(
+                tr("Info"),
+                tr("No features found above the risk threshold for hotspot analysis."),
+                Qgis.Info
+            )
             return None
 
-        # Step 2: Merge high-risk feature layers into one
-        merged_layer_path = 'memory:merged_high_risk'
-        merge_params = {'LAYERS': high_risk_layers, 'CRS': project_crs, 'OUTPUT': merged_layer_path}
+        # Step 2: Merge layers
+        merge_params = {'LAYERS': high_risk_layers, 'CRS': project_crs, 'OUTPUT': 'memory:merged_high_risk'}
         merged_result = run_algo("native:mergevectorlayers", merge_params, feedback=feedback)
         merged_layer = merged_result['OUTPUT']
 
-        # Step 3: Buffer the merged layer
-        buffered_layer_path = 'memory:buffered'
-        buffer_params = {'INPUT': merged_layer, 'DISTANCE': distance, 'SEGMENTS': 8, 'DISSOLVE': False, 'OUTPUT': buffered_layer_path}
+        # Step 3: Buffer
+        buffer_params = {'INPUT': merged_layer, 'DISTANCE': distance, 'SEGMENTS': 8, 'DISSOLVE': False, 'OUTPUT': 'memory:buffered'}
         buffered_result = run_algo("native:buffer", buffer_params, feedback=feedback)
         buffered_layer = buffered_result['OUTPUT']
 
-        # Step 4: Dissolve the buffered layer to create hotspots
-        dissolved_layer_path = 'memory:dissolved_hotspots'
-        dissolve_params = {'INPUT': buffered_layer, 'OUTPUT': dissolved_layer_path}
+        # Step 4: Dissolve
+        dissolve_params = {'INPUT': buffered_layer, 'OUTPUT': 'memory:dissolved_hotspots'}
         dissolved_result = run_algo("native:dissolve", dissolve_params, feedback=feedback)
         dissolved_layer = dissolved_result['OUTPUT']
 
-        # Step 5: Calculate statistics for each hotspot
-        stats_layer_path = 'memory:hotspots_with_stats'
+        # Step 5: Join stats
         stats_params = {
             'INPUT': dissolved_layer,
             'JOIN': merged_layer,
@@ -759,41 +770,24 @@ class ReneW:
             'JOIN_FIELDS': [output_field_name],
             'SUMMARIES': [5, 6],  # Count, Mean
             'DISCARD_NONMATCHING': True,
-            'OUTPUT': stats_layer_path
+            'OUTPUT': 'memory:hotspots_with_stats'
         }
         stats_result = run_algo("native:joinattributesbylocation", stats_params, feedback=feedback)
         stats_layer = stats_result['OUTPUT']
 
         # Rename fields for clarity
         stats_layer.startEditing()
-        stats_layer.renameAttribute(stats_layer.fields().lookupField(f'{output_field_name}_count'), 'pipe_count')
-        stats_layer.renameAttribute(stats_layer.fields().lookupField(f'{output_field_name}_mean'), 'avg_renewal_need')
+        try:
+            stats_layer.renameAttribute(stats_layer.fields().lookupField(f'{output_field_name}_count'), 'pipe_count')
+            stats_layer.renameAttribute(stats_layer.fields().lookupField(f'{output_field_name}_mean'), 'avg_renewal_need')
+        except Exception as e:
+            QgsMessageLog.logMessage(f"Could not rename hotspot fields: {e}", 'reneW', Qgis.Warning)
         stats_layer.commitChanges()
 
-        # Final styling
-        # Root rule
-        base_symbol = QgsFillSymbol.createSimple({})
-        root_rule = QgsRuleBasedRenderer.Rule(base_symbol)
-
-        # Moderate hotspot rule
-        moderate_symbol = QgsFillSymbol.createSimple({'color': '255,255,0,120', 'outline_color': 'black', 'outline_width': '0.3'})
-        expr_moderate = "\"avg_renewal_need\" >= 0.5 AND \"avg_renewal_need\" < 0.75"
-        rule_moderate = QgsRuleBasedRenderer.Rule(moderate_symbol)
-        rule_moderate.setFilterExpression(expr_moderate)
-        rule_moderate.setLabel("Moderate Hotspot (0.5 – 0.75)")
-        root_rule.appendChild(rule_moderate)
-
-        # Severe hotspot rule
-        severe_symbol = QgsFillSymbol.createSimple({'color': '255,0,0,120', 'outline_color': 'black', 'outline_width': '0.5'})
-        expr_severe = "\"avg_renewal_need\" >= 0.75"
-        rule_severe = QgsRuleBasedRenderer.Rule(severe_symbol)
-        rule_severe.setFilterExpression(expr_severe)
-        rule_severe.setLabel("Severe Hotspot (>= 0.75)")
-        root_rule.appendChild(rule_severe)
-
-        # Apply renderer
-        renderer = QgsRuleBasedRenderer(root_rule)
-        stats_layer.setRenderer(renderer)
+        # Style hotspots
+        symbol = QgsFillSymbol.createSimple({'color': '255,0,0,70', 'outline_color': 'red', 'outline_width': '0.5'})
+        stats_layer.renderer().setSymbol(symbol)
         stats_layer.setName(tr("Hotspots"))
 
+        QgsMessageLog.logMessage("Hotspot analysis finished successfully", 'reneW', Qgis.Success)
         return stats_layer
