@@ -4,7 +4,7 @@ from datetime import datetime
 import re
 import unicodedata
 
-from qgis.core import QgsProject, Qgis, QgsMessageLog, QgsMapLayerProxyModel, QgsVectorLayer
+from qgis.core import QgsProject, Qgis, QgsMessageLog, QgsMapLayerProxyModel, QgsVectorLayer, QgsWkbTypes
 from qgis.PyQt.QtWidgets import QDialog, QDialogButtonBox, QWidget, QVBoxLayout, QCheckBox, QGroupBox, QGridLayout, QLabel, QFormLayout, QDoubleSpinBox, QSpinBox, QComboBox, QLineEdit, QHBoxLayout
 from qgis.PyQt.QtCore import QSettings
 from qgis.PyQt import uic
@@ -369,7 +369,7 @@ class ReneWDialog(QDialog, FORM_CLASS):
         # Populate property layer combo with point layers
         self.propertyLayerCombo.clear()
         for lyr in QgsProject.instance().mapLayers().values():
-            if isinstance(lyr, QgsVectorLayer) and lyr.geometryType() == QgsVectorLayer.PointGeometry:
+            if isinstance(lyr, QgsVectorLayer) and lyr.geometryType() == QgsWkbTypes.PointGeometry:
                 self.propertyLayerCombo.addItem(lyr.name(), lyr.id())
 
         # Update fields when a layer is chosen
