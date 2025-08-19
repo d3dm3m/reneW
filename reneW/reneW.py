@@ -592,7 +592,6 @@ class ReneW:
                 analysis_configs, hotspot_threshold, hotspot_radius, output_field_name_for_hotspot
             )
             if hotspot_layer:
-                QgsProject.instance().addMapLayer(hotspot_layer)
                 hotspot_layer.selectionChanged.connect(lambda ids, _, __: self._open_hotspot_explorer(hotspot_layer, ids, analysis_configs))
                 self.iface.messageBar().pushMessage(
                     tr("Success"),
@@ -657,6 +656,11 @@ class ReneW:
         provider = temporal_layer.dataProvider()
         provider.addAttributes(fields)
         temporal_layer.updateFields()
+
+        temporal_layer.setFieldAlias(temporal_layer.fields().indexFromName("construction_year"), "Original Construction Year")
+        temporal_layer.setFieldAlias(temporal_layer.fields().indexFromName("calc_construction_year"), "Calculated Construction Year")
+        temporal_layer.setFieldAlias(temporal_layer.fields().indexFromName("years_left"), "Years Left")
+        temporal_layer.setFieldAlias(temporal_layer.fields().indexFromName("length_m"), "Pipe Length (m)")
 
         # Progress tracking
         total_calcs = sum(
@@ -835,7 +839,6 @@ class ReneW:
                 "renewal_need"
             )
             if hotspot_layer:
-                QgsProject.instance().addMapLayer(hotspot_layer)
                 hotspot_layer.selectionChanged.connect(lambda ids, _, __: self._open_hotspot_explorer(hotspot_layer, ids, analysis_configs))
                 self.iface.messageBar().pushMessage(
                     tr("Success"),
@@ -930,20 +933,14 @@ class ReneW:
         temporal_layer.setRenderer(renderer)
 
         # --- Configure Map Tips (Tooltips) ---
-        map_tip_html = """
-        <div style="font-family: sans-serif;">
-          <h4>Pipe Details (Year: [% "year" %])</h4>
-          <p>
-            <b>Renewal Need:</b> [% format_number("renewal_need", 2) %]<br>
-            <b>Age:</b> [% "age" %] years<br>
-            <b>Expected Life Left:</b> [% "years_left" %] years<br>
-            <b>Material:</b> [% "material" %]<br>
-            <b>Original Year:</b> [% "construction_year" %]<br>
-            <b>Length:</b> [% format_number("length_m", 1) %] m
-          </p>
-        </div>
-        """
-        temporal_layer.setMapTipTemplate(map_tip_html.strip())
+        temporal_layer.setMapTipTemplate(
+            "<b>Pipe Type:</b> [% \"pipe_type\" %]<br>"
+            "<b>Renewal Need:</b> [% round(\"renewal_need\",2) %]<br>"
+            "<b>Original Year:</b> [% \"construction_year\" %]<br>"
+            "<b>Calculated Year:</b> [% \"calc_construction_year\" %]<br>"
+            "<b>Years Left:</b> [% \"years_left\" %]<br>"
+            "<b>Length (m):</b> [% round(\"length_m\",1) %]"
+        )
         temporal_layer.setMapTipsEnabled(True)
 
         temporal_layer.triggerRepaint()
@@ -1105,6 +1102,7 @@ class ReneW:
         pipe_ids_idx = _ensure_field(stats_layer, "pipe_ids", QVariant.String)
         material_idx = _ensure_field(stats_layer, "materials", QVariant.String)
         length_idx = _ensure_field(stats_layer, "length_km", QVariant.Double)
+        severity_idx = _ensure_field(stats_layer, "severity", QVariant.String)
 
         material_field_candidates = set()
         for cfg in analysis_configs:
@@ -1146,43 +1144,51 @@ class ReneW:
             stats_layer.changeAttributeValue(hotspot.id(), material_idx, ", ".join([f"{m}:{c}" for m, c in materials_count.items()]))
             stats_layer.changeAttributeValue(hotspot.id(), length_idx, total_length_km)
 
+            avg_renewal_need_val = hotspot['avg_renewal_need']
+            if avg_renewal_need_val >= 0.75:
+                severity = "Severe"
+            elif avg_renewal_need_val >= 0.5:
+                severity = "Moderate"
+            else:
+                severity = "Low"
+            stats_layer.changeAttributeValue(hotspot.id(), severity_idx, severity)
+
         stats_layer.commitChanges()
 
 
+        hotspot_layer = stats_layer
+        hotspot_layer.setFieldAlias(hotspot_layer.fields().indexFromName("avg_renewal_need"), "Average Renewal Need")
+        hotspot_layer.setFieldAlias(hotspot_layer.fields().indexFromName("pipe_count"), "Pipe Count")
+        hotspot_layer.setFieldAlias(hotspot_layer.fields().indexFromName("severity"), "Hotspot Severity")
+
+        hotspot_layer.setMapTipTemplate(
+            "<b>Hotspot Severity:</b> [% \"severity\" %]<br>"
+            "<b>Avg Renewal Need:</b> [% round(\"avg_renewal_need\",2) %]<br>"
+            "<b>Pipe Count:</b> [% \"pipe_count\" %]"
+        )
+
         # --- Rule-based Styling for Hotspots ---
-        from qgis.core import QgsRuleBasedRenderer, QgsSymbol
+        symbol = QgsFillSymbol.createSimple({"color": "yellow", "outline_color": "black"})
+        rule_moderate = QgsRuleBasedRenderer.Rule(symbol)
+        rule_moderate.setFilterExpression("\"avg_renewal_need\" >= 0.5 AND \"avg_renewal_need\" < 0.75")
+        rule_moderate.setLabel("Moderate Hotspot (0.5–0.75)")
+
+        symbol = QgsFillSymbol.createSimple({"color": "red", "outline_color": "black"})
+        rule_severe = QgsRuleBasedRenderer.Rule(symbol)
+        rule_severe.setFilterExpression("\"avg_renewal_need\" >= 0.75")
+        rule_severe.setLabel("Severe Hotspot (>=0.75)")
 
         root_rule = QgsRuleBasedRenderer.Rule(None)
-
-        # Moderate Hotspots (0.5–0.75)
-        moderate_symbol = QgsFillSymbol.createSimple({
-            'color': '255,255,0,100',   # yellow, semi-transparent
-            'outline_color': 'black',
-            'outline_width': '0.5'
-        })
-        rule_moderate = QgsRuleBasedRenderer.Rule(moderate_symbol)
-        rule_moderate.setLabel(tr("Moderate Hotspots"))
-        rule_moderate.setFilterExpression(f"\"avg_renewal_need\" >= 0.5 AND \"avg_renewal_need\" < 0.75")
         root_rule.appendChild(rule_moderate)
-
-        # Severe Hotspots (>=0.75)
-        severe_symbol = QgsFillSymbol.createSimple({
-            'color': '255,0,0,100',     # red, semi-transparent
-            'outline_color': 'black',
-            'outline_width': '0.5'
-        })
-        rule_severe = QgsRuleBasedRenderer.Rule(severe_symbol)
-        rule_severe.setLabel(tr("Severe Hotspots"))
-        rule_severe.setFilterExpression(f"\"avg_renewal_need\" >= 0.75")
         root_rule.appendChild(rule_severe)
 
-        # Apply renderer
         renderer = QgsRuleBasedRenderer(root_rule)
-        stats_layer.setRenderer(renderer)
-        stats_layer.setName(tr("Hotspots"))
+        hotspot_layer.setRenderer(renderer)
+        hotspot_layer.setName(tr("Hotspots"))
 
+        QgsProject.instance().addMapLayer(hotspot_layer)
         QgsMessageLog.logMessage("Hotspot analysis finished successfully", 'reneW', Qgis.Success)
-        return stats_layer
+        return hotspot_layer
 
     def _open_hotspot_explorer(self, hotspot_layer, selected_ids, analysis_configs):
         if not selected_ids:
