@@ -112,3 +112,108 @@ These parameters (`mu` and `sigma`) can be customized for each material in the *
 
 ## Advanced Configuration: Customizing Parameters
 The plugin's underlying statistical model is controlled by `parameters.json`. You can edit this file directly or use the built-in **Parameter Editor** (click "Edit Parameters..." in the main dialog) to customize the mean lifetime (`mu`) and standard deviation (`sigma`) for different materials.
+
+## Public API for Scripting
+
+The `reneW` plugin exposes a public API that allows you to run its analysis functions programmatically from the QGIS Python Console or other plugins.
+
+### Accessing the API
+
+Once the plugin is loaded, you can access the API instance via the `reneW.api` object:
+
+```python
+from reneW import api
+
+# Now you can call API methods
+# api.calculate_renewal_need(...)
+```
+
+### API Methods
+
+#### `calculate_renewal_need(layer, config)`
+
+Calculates the renewal need for a single layer and adds a `renewal_need` field to it.
+
+*   **`layer`**: `QgsVectorLayer` - The pipe layer to analyze.
+*   **`config`**: `dict` - A dictionary specifying the field names and pipe type.
+*   **Returns**: The modified `QgsVectorLayer`.
+
+**Example:**
+
+```python
+layer = iface.activeLayer()
+
+config = {
+    'type': 'water',  # 'water', 'wastewater', or 'stormwater'
+    'material_field': 'material_name',
+    'year_field': 'install_date',
+    'dimension_field': 'pipe_diameter'
+}
+
+# The original layer is modified in-place
+api.calculate_renewal_need(layer, config)
+iface.messageBar().pushMessage("Success", "Renewal need calculated.", level=Qgis.Success)
+```
+
+#### `temporal_analysis(configs, start_year, end_year, step)`
+
+Performs a temporal analysis and creates a new time-aware memory layer.
+
+*   **`configs`**: `list` - A list of layer configuration dictionaries.
+*   **`start_year`**: `int` - The start year for the analysis.
+*   **`end_year`**: `int` - The end year for the analysis.
+*   **`step`**: `int` - The time step in years.
+*   **Returns**: A new `QgsVectorLayer` named "Temporal Renewal Need".
+
+**Example:**
+
+```python
+water_layer = QgsProject.instance().mapLayersByName("Water Pipes")[0]
+sewer_layer = QgsProject.instance().mapLayersByName("Sewer Pipes")[0]
+
+configs = [
+    {
+        'layer': water_layer,
+        'type': 'water',
+        'material_field': 'mat',
+        'year_field': 'year_built',
+        'dimension_field': 'diam'
+    },
+    {
+        'layer': sewer_layer,
+        'type': 'wastewater',
+        'material_field': 'material',
+        'year_field': 'inst_year',
+        'dimension_field': 'diameter'
+    }
+]
+
+temporal_layer = api.temporal_analysis(configs, 2024, 2054, 5)
+if temporal_layer:
+    print(f"Temporal analysis complete. New layer created: {temporal_layer.name()}")
+
+```
+
+#### `hotspot_analysis(configs, threshold, radius, field_name)`
+
+Performs a hotspot analysis on one or more layers.
+
+*   **`configs`**: `list` - A list of layer configuration dictionaries.
+*   **`threshold`**: `float` - The renewal need value above which a pipe is considered high-risk.
+*   **`radius`**: `float` - The search radius (in layer units) for clustering high-risk pipes.
+*   **`field_name`**: `str` - The name of the field containing the renewal need score.
+*   **Returns**: A new `QgsVectorLayer` named "Hotspots" or `None`.
+
+**Example:**
+
+```python
+# Assuming 'water_layer' and 'sewer_layer' are defined and have renewal_need calculated
+configs = [
+    {'layer': water_layer},
+    {'layer': sewer_layer}
+]
+
+hotspot_layer = api.hotspot_analysis(configs, threshold=0.75, radius=50, field_name='renewal_need')
+if hotspot_layer:
+    print(f"Hotspot analysis complete. New layer created: {hotspot_layer.name()}")
+```

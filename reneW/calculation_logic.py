@@ -16,7 +16,8 @@ except Exception:  # pragma: no cover
     _scipy_norm = None
 
 SQRT2 = math.sqrt(2.0)
-Z_0P9 = 1.2815515655446004  # Phi^{-1}(0.9) – used only by derive_sigma_from_t50_t90
+Z_0P9 = 1.2815515655446004
+
 
 def normal_cdf(x: float, mu: float, sigma: float) -> float:
     """Return Phi((x - mu)/sigma). Uses SciPy if available; otherwise math.erf."""
@@ -27,19 +28,23 @@ def normal_cdf(x: float, mu: float, sigma: float) -> float:
         return float(_scipy_norm.cdf(z))
     return 0.5 * (1.0 + math.erf(z / SQRT2))
 
+
 def clamp01(v: float) -> float:
     return 0.0 if v < 0.0 else (1.0 if v > 1.0 else v)
+
 
 @dataclass(frozen=True)
 class MaterialParams:
     mu: float
     sigma: float
 
+
 @dataclass(frozen=True)
 class Cohort:
     length_km: float
     install_year: int
     material_key: str  # not required for math; useful for debugging
+
 
 def renewal_for_cohort_period(
     cohort: Cohort,
@@ -54,13 +59,18 @@ def renewal_for_cohort_period(
     age0 = t0 - cohort.install_year
     age1 = t1 - cohort.install_year
 
-    F0 = 0.0 if age0 <= 0 else clamp01(normal_cdf(age0, params.mu, params.sigma))
-    F1 = 0.0 if age1 <= 0 else clamp01(normal_cdf(age1, params.mu, params.sigma))
+    F0 = 0.0 if age0 <= 0 else clamp01(
+        normal_cdf(age0, params.mu, params.sigma)
+    )
+    F1 = 0.0 if age1 <= 0 else clamp01(
+        normal_cdf(age1, params.mu, params.sigma)
+    )
 
     dF = F1 - F0
     if dF <= 0:
         return 0.0
     return min(cohort.length_km, cohort.length_km * dF)
+
 
 def renewal_totals(
     cohorts: Iterable[Cohort],
@@ -77,6 +87,7 @@ def renewal_totals(
         totals.append(s)
     return totals
 
+
 def cumulative_by_period(values: Iterable[float]) -> List[float]:
     out: List[float] = []
     acc = 0.0
@@ -85,14 +96,17 @@ def cumulative_by_period(values: Iterable[float]) -> List[float]:
         out.append(acc)
     return out
 
+
 def derive_sigma_from_t50_t90(t50: float, t90: float) -> float:
     """For a normal model: mu ≈ t50; sigma ≈ (t90 - t50) / z_{0.9}."""
     if t90 <= t50:
         return 0.0
     return (t90 - t50) / Z_0P9
 
+
 def decades_from(start: int, n_periods: int) -> List[Tuple[int, int]]:
-    return [(start + 10*i, start + 10*(i+1)) for i in range(n_periods)]
+    return [(start + 10 * i, start + 10 * (i + 1)) for i in range(n_periods)]
+
 
 def cumulative_failure_probability(cohort, year, params):
     """
@@ -106,6 +120,7 @@ def cumulative_failure_probability(cohort, year, params):
     # Standard normal CDF
     z = (t - mu) / sigma
     return 0.5 * (1 + math.erf(z / math.sqrt(2)))
+
 
 if __name__ == "__main__":
     # Quick smoke test

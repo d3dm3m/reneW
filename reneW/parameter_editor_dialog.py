@@ -1,10 +1,11 @@
 import os
 import json
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import QDialog, QTableWidgetItem
+from qgis.PyQt.QtWidgets import (QDialog, QTableWidgetItem, QMessageBox,
+                                 QInputDialog, QHeaderView)
 from qgis.PyQt.QtGui import QFont, QColor
 
-# This loads your .ui file
+
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'parameter_editor_dialog.ui'))
 
@@ -15,7 +16,6 @@ class ParameterEditorDialog(QDialog, FORM_CLASS):
         super(ParameterEditorDialog, self).__init__(parent)
         self.setupUi(self)
 
-        # Rename buttons for clarity, the object names come from the .ui file
         self.mBtnAddMaterialRow.setText("Add/Override Material")
         self.mBtnRemoveMaterialRow.setText("Remove Override/Material")
 
@@ -25,13 +25,11 @@ class ParameterEditorDialog(QDialog, FORM_CLASS):
         self._load_data()
         self._populate_combo()
 
-        # Connect signals
         self.mPipeTypeCombo.currentIndexChanged.connect(self._populate_table)
         self.mBtnAddMaterialRow.clicked.connect(self._add_row)
         self.mBtnRemoveMaterialRow.clicked.connect(self._remove_row)
         self.mButtonBox.accepted.connect(self.accept)
 
-        # Initial population
         self._populate_table()
 
     def _load_data(self):
@@ -40,7 +38,6 @@ class ParameterEditorDialog(QDialog, FORM_CLASS):
             with open(self.param_file, 'r', encoding='utf-8') as f:
                 self.data = json.load(f)
         except (IOError, json.JSONDecodeError):
-            # Provide a fallback structure if the file is missing or corrupt
             self.data = {
                 "material_defaults": {},
                 "water": {},
@@ -64,7 +61,6 @@ class ParameterEditorDialog(QDialog, FORM_CLASS):
         default_bucket = self.data.get("material_defaults", {})
 
         if selected_path == "--- Edit Defaults ---":
-            # When editing defaults, the domain bucket is the default bucket
             return default_bucket, None
 
         path_parts = selected_path.split('/')
@@ -75,11 +71,10 @@ class ParameterEditorDialog(QDialog, FORM_CLASS):
         return domain_bucket, default_bucket
 
     def _populate_table(self):
-        """Populates the materials table based on the selected pipe type, merging defaults and overrides."""
+        """Populates the materials table based on the selected pipe type."""
         self.mMaterialsTable.setRowCount(0)
         domain_bucket, default_bucket = self._get_current_buckets()
 
-        # If editing defaults, there's no secondary bucket to merge with.
         if default_bucket is None:
             default_bucket = {}
             self.mBtnAddMaterialRow.setText("Add Material")
@@ -88,9 +83,9 @@ class ParameterEditorDialog(QDialog, FORM_CLASS):
             self.mBtnAddMaterialRow.setText("Add/Override Material")
             self.mBtnRemoveMaterialRow.setText("Remove Override")
 
-
-        # Combine keys from both buckets to create a full list
-        all_keys = sorted(list(set(domain_bucket.keys()) | set(default_bucket.keys())))
+        all_keys = sorted(
+            list(set(domain_bucket.keys()) | set(default_bucket.keys()))
+        )
         self.mMaterialsTable.setRowCount(len(all_keys))
 
         italic_font = QFont()
@@ -99,8 +94,6 @@ class ParameterEditorDialog(QDialog, FORM_CLASS):
 
         for row_idx, key in enumerate(all_keys):
             is_override = key in domain_bucket
-
-            # Use domain value if it exists (override), otherwise use default
             params = domain_bucket.get(key, default_bucket.get(key, {}))
             mu = str(params.get('mu', ''))
             sigma = str(params.get('sigma', ''))
@@ -110,7 +103,6 @@ class ParameterEditorDialog(QDialog, FORM_CLASS):
             sigma_item = QTableWidgetItem(sigma)
 
             if not is_override and default_bucket:
-                # Style default values to be visually distinct
                 key_item.setFont(italic_font)
                 mu_item.setFont(italic_font)
                 sigma_item.setFont(italic_font)
@@ -131,7 +123,6 @@ class ParameterEditorDialog(QDialog, FORM_CLASS):
         self.mMaterialsTable.scrollToBottom()
         self.mMaterialsTable.editItem(self.mMaterialsTable.item(row_count, 0))
 
-
     def _remove_row(self):
         """Removes the currently selected row from the table."""
         current_row = self.mMaterialsTable.currentRow()
@@ -146,17 +137,13 @@ class ParameterEditorDialog(QDialog, FORM_CLASS):
         key = key_item.text()
         domain_bucket, default_bucket = self._get_current_buckets()
 
-        # If the key is in the domain-specific bucket, it will be deleted from the overrides.
         if key in domain_bucket:
             del domain_bucket[key]
 
-        # If editing defaults, removing it deletes it permanently from the defaults.
-        if default_bucket is None and key in domain_bucket: # domain_bucket is defaults here
-             del domain_bucket[key]
+        if default_bucket is None and key in domain_bucket:
+            del domain_bucket[key]
 
-        # Repopulate to reflect the change (e.g., a deleted override now shows as default)
         self._populate_table()
-
 
     def accept(self):
         """Saves the table data back to the json file and closes."""
@@ -167,7 +154,6 @@ class ParameterEditorDialog(QDialog, FORM_CLASS):
 
         default_bucket = self.data.get("material_defaults", {})
 
-        # Handle saving the defaults list
         if selected_path == "--- Edit Defaults ---":
             new_materials = {}
             for row in range(self.mMaterialsTable.rowCount()):
@@ -178,10 +164,8 @@ class ParameterEditorDialog(QDialog, FORM_CLASS):
                     if key:
                         new_materials[key] = {'mu': mu, 'sigma': sigma}
                 except (ValueError, AttributeError, TypeError, IndexError):
-                    continue # Skip empty or invalid rows
+                    continue
             self.data["material_defaults"] = new_materials
-
-        # Handle saving domain-specific overrides
         else:
             path_parts = selected_path.split('/')
             parent_dict = self.data
@@ -196,14 +180,12 @@ class ParameterEditorDialog(QDialog, FORM_CLASS):
                     mu = float(self.mMaterialsTable.item(row, 1).text())
                     sigma = float(self.mMaterialsTable.item(row, 2).text())
 
-                    if not key: continue
+                    if not key:
+                        continue
 
                     default_params = default_bucket.get(key)
-
-                    # If there are no defaults for this key, any entry is an override
                     is_override = not default_params
                     if default_params:
-                        # Check if the value is different from the default
                         same_mu = abs(mu - default_params.get('mu', float('nan'))) < 1e-9
                         same_sigma = abs(sigma - default_params.get('sigma', float('nan'))) < 1e-9
                         if not (same_mu and same_sigma):
@@ -213,16 +195,14 @@ class ParameterEditorDialog(QDialog, FORM_CLASS):
                         new_overrides[key] = {'mu': mu, 'sigma': sigma}
 
                 except (ValueError, AttributeError, TypeError, IndexError):
-                    continue # Skip empty or invalid rows
-
+                    continue
             parent_dict[leaf_key] = new_overrides
 
-        # Save the updated data back to the file
         try:
             with open(self.param_file, 'w', encoding='utf-8') as f:
-                json.dump(self.data, f, indent=2, ensure_ascii=False, sort_keys=True)
+                json.dump(self.data, f, indent=2,
+                          ensure_ascii=False, sort_keys=True)
         except IOError:
-            # Consider showing an error message to the user
             pass
 
         super(ParameterEditorDialog, self).accept()

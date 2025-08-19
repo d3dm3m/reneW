@@ -2,6 +2,10 @@ import os
 from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication
 
 
+# This will be populated when the plugin is loaded
+api = None
+
+
 def classFactory(iface):
     """Load reneW class from file reneW.
     :param iface: A QGIS interface instance.
@@ -22,4 +26,11 @@ def classFactory(iface):
         QCoreApplication.installTranslator(translator)
 
     from .reneW import ReneW
-    return ReneW(iface)
+    from .api import ReneWApi
+
+    plugin_instance = ReneW(iface)
+
+    global api
+    api = ReneWApi(plugin_instance)
+
+    return plugin_instance
