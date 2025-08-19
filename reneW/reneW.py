@@ -643,6 +643,10 @@ class ReneW:
         fields.append(QgsField("dimension", QVariant.Double))
         fields.append(QgsField("age", QVariant.Int))
         fields.append(QgsField("optimism_factor", QVariant.Double))
+        fields.append(QgsField("construction_year", QVariant.Int))
+        fields.append(QgsField("calc_construction_year", QVariant.Int))
+        fields.append(QgsField("years_left", QVariant.Int))
+        fields.append(QgsField("length_m", QVariant.Double))
 
         # Create the memory layer
         temporal_layer = QgsVectorLayer(
@@ -780,6 +784,9 @@ class ReneW:
                         dimension_val = self._parse_dimension(attrs[field_indices['dimension_field']])
                     age_val = year - effective_install_year
 
+                    years_left = int(params.mu - age)
+                    length_m = feature.geometry().length() if feature.geometry() else 0.0
+
                     out_feat.setAttributes([
                         str(feature.id()),
                         layer_name,
@@ -791,7 +798,11 @@ class ReneW:
                         material_val,
                         dimension_val,
                         age_val,
-                        optimism_factor
+                        optimism_factor,
+                        installation_year,
+                        adjusted_install_year,
+                        years_left,
+                        round(length_m, 2)
                     ])
                     provider.addFeature(out_feat)
 
@@ -917,6 +928,24 @@ class ReneW:
 
         renderer = QgsRuleBasedRenderer(root)
         temporal_layer.setRenderer(renderer)
+
+        # --- Configure Map Tips (Tooltips) ---
+        map_tip_html = """
+        <div style="font-family: sans-serif;">
+          <h4>Pipe Details (Year: [% "year" %])</h4>
+          <p>
+            <b>Renewal Need:</b> [% format_number("renewal_need", 2) %]<br>
+            <b>Age:</b> [% "age" %] years<br>
+            <b>Expected Life Left:</b> [% "years_left" %] years<br>
+            <b>Material:</b> [% "material" %]<br>
+            <b>Original Year:</b> [% "construction_year" %]<br>
+            <b>Length:</b> [% format_number("length_m", 1) %] m
+          </p>
+        </div>
+        """
+        temporal_layer.setMapTipTemplate(map_tip_html.strip())
+        temporal_layer.setMapTipsEnabled(True)
+
         temporal_layer.triggerRepaint()
 
     def _style_standard_analysis_layer(self, layer):
