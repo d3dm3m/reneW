@@ -4,6 +4,10 @@
     "author": "Marcus Nordlander",
     "description": "Comprehensive, domain-specific material parameters based on municipal data from user."
   },
+  "material_defaults": {
+    "mu": 80,
+    "sigma": 20
+  },
   "renovation_method_mapping": {
     "0": "Odefinierat",
     "1": "Strumpinfodring",
@@ -19,6 +23,10 @@
   },
   "municipalities": [],
   "water": {
+    "None": {
+      "mu": 80,
+      "sigma": 20
+    },
     "bly": { "mu": 90.0, "sigma": 2.5 },
     "grajarn": { "mu": 60.0, "sigma": 5.0 },
     "grajarn_blymuff": { "mu": 60.0, "sigma": 5.0 },

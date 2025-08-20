@@ -248,12 +248,19 @@ class ReneWApi:
                     adjusted_age = age / (optimism or 1.0)
                     calc_install_year = yr - int(adjusted_age)
 
-                    key, params = material_lookup.find_material_key(
-                        self._params(),
-                        domain=domain,
-                        subtype=subtype,
-                        material_name=mat_val,
-                    )
+                    try:
+                        key, params = material_lookup.find_material_key(
+                            self._params(),
+                            domain=domain,
+                            subtype=subtype,
+                            material_name=mat_val,
+                        )
+                    except KeyError:
+                        utils.log_warn(
+                            f"Missing parameters for {domain}/{mat_val}; using defaults."
+                        )
+                        params = material_lookup.MaterialParams(mu=80, sigma=20)
+                        key = "default"
                     cohort = calculation_logic.Cohort(
                         length_km=1.0, install_year=calc_install_year, material_key=key
                     )
