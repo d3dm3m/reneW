@@ -1,11 +1,29 @@
 import os
 from datetime import datetime
 
-from qgis.core import QgsProject, Qgis, QgsMapLayerProxyModel, QgsVectorLayer, QgsWkbTypes
-from qgis.PyQt.QtWidgets import (QDialog, QDialogButtonBox, QWidget, QVBoxLayout,
-                                 QCheckBox, QGroupBox, QGridLayout, QLabel,
-                                 QFormLayout, QDoubleSpinBox, QSpinBox,
-                                 QComboBox, QLineEdit, QHBoxLayout)
+from qgis.core import (
+    QgsProject,
+    Qgis,
+    QgsMapLayerProxyModel,
+    QgsVectorLayer,
+    QgsWkbTypes,
+)
+from qgis.PyQt.QtWidgets import (
+    QDialog,
+    QDialogButtonBox,
+    QWidget,
+    QVBoxLayout,
+    QCheckBox,
+    QGroupBox,
+    QGridLayout,
+    QLabel,
+    QFormLayout,
+    QDoubleSpinBox,
+    QSpinBox,
+    QComboBox,
+    QLineEdit,
+    QHBoxLayout,
+)
 from qgis.PyQt.QtCore import QSettings
 from qgis.PyQt import uic
 from qgis.gui import QgsFieldComboBox, QgsMapLayerComboBox
@@ -13,8 +31,9 @@ from .parameter_editor_dialog import ParameterEditorDialog
 from . import utils
 
 
-FORM_CLASS, _ = uic.loadUiType(os.path.join(
-    os.path.dirname(__file__), 'reneW_dialog_base.ui'))
+FORM_CLASS, _ = uic.loadUiType(
+    os.path.join(os.path.dirname(__file__), "reneW_dialog_base.ui")
+)
 
 
 class ReneWDialog(QDialog, FORM_CLASS):
@@ -25,9 +44,7 @@ class ReneWDialog(QDialog, FORM_CLASS):
 
         hotspot_groupbox = QGroupBox(self.tr("Hotspot Analysis"))
         hotspot_layout = QFormLayout(hotspot_groupbox)
-        self.mCheckBoxEnableHotspot = QCheckBox(
-            self.tr("Enable Hotspot Analysis")
-        )
+        self.mCheckBoxEnableHotspot = QCheckBox(self.tr("Enable Hotspot Analysis"))
         self.mSpinBoxHotspotThreshold = QDoubleSpinBox()
         self.mSpinBoxHotspotRadius = QSpinBox()
         self.mSpinBoxHotspotThreshold.setDecimals(2)
@@ -38,10 +55,10 @@ class ReneWDialog(QDialog, FORM_CLASS):
         self.mSpinBoxHotspotRadius.setValue(50)
         self.mSpinBoxHotspotRadius.setSuffix(" m")
         hotspot_layout.addRow(self.mCheckBoxEnableHotspot)
-        hotspot_layout.addRow(self.tr("Renewal need threshold:"),
-                              self.mSpinBoxHotspotThreshold)
-        hotspot_layout.addRow(self.tr("Search radius:"),
-                              self.mSpinBoxHotspotRadius)
+        hotspot_layout.addRow(
+            self.tr("Renewal need threshold:"), self.mSpinBoxHotspotThreshold
+        )
+        hotspot_layout.addRow(self.tr("Search radius:"), self.mSpinBoxHotspotRadius)
         self.groupBox.layout().insertWidget(2, hotspot_groupbox)
         self.mCheckBoxEnableHotspot.toggled[bool].connect(
             self.mSpinBoxHotspotThreshold.setEnabled
@@ -103,7 +120,9 @@ class ReneWDialog(QDialog, FORM_CLASS):
         prop_layout.addLayout(kneigh_layout)
 
         frac_layout = QHBoxLayout()
-        frac_layout.addWidget(QLabel(self.tr("Sample Fractions (0–1, comma separated):")))
+        frac_layout.addWidget(
+            QLabel(self.tr("Sample Fractions (0–1, comma separated):"))
+        )
         self.sampleFractionsEdit = QLineEdit("0,0.25,0.5,0.75,1")
         frac_layout.addWidget(self.sampleFractionsEdit)
         prop_layout.addLayout(frac_layout)
@@ -120,8 +139,7 @@ class ReneWDialog(QDialog, FORM_CLASS):
         self.mTemporalStepSpinBox = QSpinBox()
         self.mNumClassesSpinBox = QSpinBox()
         current_year = datetime.now().year
-        self.mTemporalStartYearSpinBox.setRange(current_year - 10,
-                                                current_year + 100)
+        self.mTemporalStartYearSpinBox.setRange(current_year - 10, current_year + 100)
         self.mTemporalStartYearSpinBox.setValue(current_year)
         self.mTemporalEndYearSpinBox.setRange(current_year, current_year + 200)
         self.mTemporalEndYearSpinBox.setValue(current_year + 40)
@@ -135,11 +153,11 @@ class ReneWDialog(QDialog, FORM_CLASS):
         temporal_layout.addWidget(self.mTemporalEndYearSpinBox, 0, 3)
         temporal_layout.addWidget(QLabel(self.tr("Step (Years):")), 1, 0)
         temporal_layout.addWidget(self.mTemporalStepSpinBox, 1, 1)
-        temporal_layout.addWidget(QLabel(self.tr("Number of Color Classes:")),
-                                  1, 2)
+        temporal_layout.addWidget(QLabel(self.tr("Number of Color Classes:")), 1, 2)
         temporal_layout.addWidget(self.mNumClassesSpinBox, 1, 3)
-        self.verticalLayout_2.insertWidget(self.verticalLayout_2.count() - 3,
-                                           self.mTemporalGroupBox)
+        self.verticalLayout_2.insertWidget(
+            self.verticalLayout_2.count() - 3, self.mTemporalGroupBox
+        )
 
         self.tabs = []
         self._create_dynamic_tabs()
@@ -148,9 +166,7 @@ class ReneWDialog(QDialog, FORM_CLASS):
         )
         self.mBtnEditParameters.clicked.connect(self._open_parameter_editor)
         self.mTemporalGroupBox.toggled[bool].connect(self._validate_inputs)
-        self.mTemporalStartYearSpinBox.valueChanged.connect(
-            self._validate_inputs
-        )
+        self.mTemporalStartYearSpinBox.valueChanged.connect(self._validate_inputs)
         self.mTemporalEndYearSpinBox.valueChanged.connect(self._validate_inputs)
         try:
             self.btnAutoDetect.clicked.connect(self._auto_detect_layers_fields)
@@ -159,13 +175,13 @@ class ReneWDialog(QDialog, FORM_CLASS):
 
         self.propertyLayerCombo.clear()
         for lyr in QgsProject.instance().mapLayers().values():
-            if (isinstance(lyr, QgsVectorLayer) and
-                    lyr.geometryType() == QgsWkbTypes.PointGeometry):
+            if (
+                isinstance(lyr, QgsVectorLayer)
+                and lyr.geometryType() == QgsWkbTypes.PointGeometry
+            ):
                 self.propertyLayerCombo.addItem(lyr.name(), lyr.id())
 
-        self.propertyLayerCombo.currentIndexChanged.connect(
-            self._updatePropertyFields
-        )
+        self.propertyLayerCombo.currentIndexChanged.connect(self._updatePropertyFields)
         self._updatePropertyFields()
 
         self._validate_inputs()
@@ -178,9 +194,9 @@ class ReneWDialog(QDialog, FORM_CLASS):
         muni_field = None
 
         for tab in self.tabs:
-            if tab['check'].isChecked():
-                layer = tab['layer_combo'].currentLayer()
-                field = tab['muni_combo'].currentField()
+            if tab["check"].isChecked():
+                layer = tab["layer_combo"].currentLayer()
+                field = tab["muni_combo"].currentField()
                 if layer and field:
                     source_layer = layer
                     muni_field = field
@@ -195,8 +211,7 @@ class ReneWDialog(QDialog, FORM_CLASS):
         if idx != -1:
             unique_values = source_layer.uniqueValues(idx)
             for value in sorted(list(unique_values)):
-                self.mMunicipalityFilterCombo.addItem(str(value),
-                                                      userData=value)
+                self.mMunicipalityFilterCombo.addItem(str(value), userData=value)
 
     def _create_dynamic_tabs(self):
         while self.mTabWidget.count() > 0:
@@ -210,57 +225,81 @@ class ReneWDialog(QDialog, FORM_CLASS):
             group = QGroupBox()
             grid_layout = QGridLayout(group)
             fields_to_create = [
-                {'label': self.tr("Layer:"), 'name': 'layer_combo',
-                 'widget': QgsMapLayerComboBox},
-                {'label': self.tr("Municipality field (optional):"),
-                 'name': 'muni_combo', 'widget': QgsFieldComboBox},
-                {'label': self.tr("Material field:"), 'name': 'mat_combo',
-                 'widget': QgsFieldComboBox},
-                {'label': self.tr("Construction year field:"),
-                 'name': 'year_combo', 'widget': QgsFieldComboBox},
-                {'label': self.tr("Dimension field:"), 'name': 'dim_combo',
-                 'widget': QgsFieldComboBox},
-                {'label': self.tr("Renovation year (optional):"),
-                 'name': 'reno_year_combo', 'widget': QgsFieldComboBox},
-                {'label': self.tr("Renovation method (optional):"),
-                 'name': 'reno_method_combo', 'widget': QgsFieldComboBox}
+                {
+                    "label": self.tr("Layer:"),
+                    "name": "layer_combo",
+                    "widget": QgsMapLayerComboBox,
+                },
+                {
+                    "label": self.tr("Municipality field (optional):"),
+                    "name": "muni_combo",
+                    "widget": QgsFieldComboBox,
+                },
+                {
+                    "label": self.tr("Material field:"),
+                    "name": "mat_combo",
+                    "widget": QgsFieldComboBox,
+                },
+                {
+                    "label": self.tr("Construction year field:"),
+                    "name": "year_combo",
+                    "widget": QgsFieldComboBox,
+                },
+                {
+                    "label": self.tr("Dimension field:"),
+                    "name": "dim_combo",
+                    "widget": QgsFieldComboBox,
+                },
+                {
+                    "label": self.tr("Renovation year (optional):"),
+                    "name": "reno_year_combo",
+                    "widget": QgsFieldComboBox,
+                },
+                {
+                    "label": self.tr("Renovation method (optional):"),
+                    "name": "reno_method_combo",
+                    "widget": QgsFieldComboBox,
+                },
             ]
-            tab_data = {'name': set_name, 'check': check, 'group': group}
+            tab_data = {"name": set_name, "check": check, "group": group}
             for i, field_info in enumerate(fields_to_create):
-                label = QLabel(field_info['label'])
-                combo = field_info['widget']()
-                if 'optional' in field_info['label']:
+                label = QLabel(field_info["label"])
+                combo = field_info["widget"]()
+                if "optional" in field_info["label"]:
                     combo.setAllowEmptyFieldName(True)
                 grid_layout.addWidget(label, i, 0)
                 grid_layout.addWidget(combo, i, 1)
-                tab_data[field_info['name']] = combo
+                tab_data[field_info["name"]] = combo
             tab_layout.addWidget(check)
             tab_layout.addWidget(group)
             self.mTabWidget.addTab(tab_widget, set_name)
             self.tabs.append(tab_data)
             check.toggled[bool].connect(group.setEnabled)
-            tab_data['layer_combo'].setFilters(
-                QgsMapLayerProxyModel.VectorLayer
-            )
-            for combo_name in ['muni_combo', 'mat_combo', 'year_combo',
-                               'dim_combo', 'reno_year_combo',
-                               'reno_method_combo']:
-                tab_data['layer_combo'].layerChanged.connect(
+            tab_data["layer_combo"].setFilters(QgsMapLayerProxyModel.LineLayer)
+            for combo_name in [
+                "muni_combo",
+                "mat_combo",
+                "year_combo",
+                "dim_combo",
+                "reno_year_combo",
+                "reno_method_combo",
+            ]:
+                tab_data["layer_combo"].layerChanged.connect(
                     tab_data[combo_name].setLayer
                 )
 
             check.toggled[bool].connect(self._validate_inputs)
             check.toggled[bool].connect(self._update_municipality_filter)
-            tab_data['layer_combo'].layerChanged.connect(self._validate_inputs)
-            tab_data['layer_combo'].layerChanged.connect(
+            tab_data["layer_combo"].layerChanged.connect(self._validate_inputs)
+            tab_data["layer_combo"].layerChanged.connect(
                 self._update_municipality_filter
             )
-            tab_data['muni_combo'].fieldChanged.connect(
+            tab_data["muni_combo"].fieldChanged.connect(
                 self._update_municipality_filter
             )
-            tab_data['mat_combo'].fieldChanged.connect(self._validate_inputs)
-            tab_data['year_combo'].fieldChanged.connect(self._validate_inputs)
-            tab_data['dim_combo'].fieldChanged.connect(self._validate_inputs)
+            tab_data["mat_combo"].fieldChanged.connect(self._validate_inputs)
+            tab_data["year_combo"].fieldChanged.connect(self._validate_inputs)
+            tab_data["dim_combo"].fieldChanged.connect(self._validate_inputs)
             group.setEnabled(False)
 
         self._update_municipality_filter()
@@ -276,17 +315,17 @@ class ReneWDialog(QDialog, FORM_CLASS):
         tab_name_map = {
             "water": "water",
             "wastewater": "sewer",
-            "stormwater": "stormwater"
+            "stormwater": "stormwater",
         }
         target_tab_name = tab_name_map.get(pipe_type)
         if not target_tab_name:
             return
 
         for tab in self.tabs:
-            if tab['name'] == target_tab_name:
-                tab['check'].setChecked(True)
+            if tab["name"] == target_tab_name:
+                tab["check"].setChecked(True)
                 if layer:
-                    tab['layer_combo'].setLayer(layer)
+                    tab["layer_combo"].setLayer(layer)
 
                 field_map = {
                     "material_field": "mat_combo",
@@ -294,7 +333,7 @@ class ReneWDialog(QDialog, FORM_CLASS):
                     "dimension_field": "dim_combo",
                     "municipality_field": "muni_combo",
                     "reno_year_field": "reno_year_combo",
-                    "reno_method_field": "reno_method_combo"
+                    "reno_method_field": "reno_method_combo",
                 }
 
                 for role, field_name in picks.items():
@@ -305,13 +344,26 @@ class ReneWDialog(QDialog, FORM_CLASS):
 
     def _auto_detect_layers_fields(self):
         plan = {
-            "water": ["material_field", "year_field", "dimension_field",
-                      "municipality_field"],
-            "wastewater": ["material_field", "year_field",
-                           "dimension_field", "reno_year_field",
-                           "reno_method_field", "municipality_field"],
-            "stormwater": ["material_field", "year_field",
-                           "dimension_field", "municipality_field"],
+            "water": [
+                "material_field",
+                "year_field",
+                "dimension_field",
+                "municipality_field",
+            ],
+            "wastewater": [
+                "material_field",
+                "year_field",
+                "dimension_field",
+                "reno_year_field",
+                "reno_method_field",
+                "municipality_field",
+            ],
+            "stormwater": [
+                "material_field",
+                "year_field",
+                "dimension_field",
+                "municipality_field",
+            ],
         }
 
         for pipe_type in ["water", "wastewater", "stormwater"]:
@@ -334,11 +386,10 @@ class ReneWDialog(QDialog, FORM_CLASS):
             )
 
         try:
-            iface = getattr(self, 'iface', None)
+            iface = getattr(self, "iface", None)
             if iface:
                 iface.messageBar().pushMessage(
-                    "reneW", "Auto-detection complete.", level=Qgis.Info,
-                    duration=4
+                    "reneW", "Auto-detection complete.", level=Qgis.Info, duration=4
                 )
         except Exception as e:
             utils.log_warning(f"Could not push message to bar: {e}")
@@ -400,23 +451,25 @@ class ReneWDialog(QDialog, FORM_CLASS):
     def get_analysis_configs(self) -> list:
         configs = []
         for tab in self.tabs:
-            if tab['check'].isChecked() and tab['layer_combo'].currentLayer():
-                type_name = tab['name']
+            if tab["check"].isChecked() and tab["layer_combo"].currentLayer():
+                type_name = tab["name"]
                 if type_name == "stormwater":
                     type_name = "sewer/storm"
                 elif type_name == "sewer":
                     type_name = "sewer/spill"
 
-                configs.append({
-                    'type': type_name,
-                    'layer': tab['layer_combo'].currentLayer(),
-                    'municipality_field': tab['muni_combo'].currentField(),
-                    'material_field': tab['mat_combo'].currentField(),
-                    'year_field': tab['year_combo'].currentField(),
-                    'dimension_field': tab['dim_combo'].currentField(),
-                    'reno_year_field': tab['reno_year_combo'].currentField(),
-                    'reno_method_field': tab['reno_method_combo'].currentField()
-                })
+                configs.append(
+                    {
+                        "type": type_name,
+                        "layer": tab["layer_combo"].currentLayer(),
+                        "municipality_field": tab["muni_combo"].currentField(),
+                        "material_field": tab["mat_combo"].currentField(),
+                        "year_field": tab["year_combo"].currentField(),
+                        "dimension_field": tab["dim_combo"].currentField(),
+                        "reno_year_field": tab["reno_year_combo"].currentField(),
+                        "reno_method_field": tab["reno_method_combo"].currentField(),
+                    }
+                )
         return configs
 
     def propertyLayer(self):
@@ -443,9 +496,7 @@ class ReneWDialog(QDialog, FORM_CLASS):
 
     def _validate_inputs(self):
         try:
-            ok_button = self.mButtonBox.button(
-                QDialogButtonBox.StandardButton.Ok
-            )
+            ok_button = self.mButtonBox.button(QDialogButtonBox.StandardButton.Ok)
         except AttributeError:
             ok_button = self.mButtonBox.button(QDialogButtonBox.Ok)
 
@@ -454,37 +505,41 @@ class ReneWDialog(QDialog, FORM_CLASS):
         error_messages = []
         is_at_least_one_tab_active = False
         for tab in self.tabs:
-            if not tab['check'].isChecked():
+            if not tab["check"].isChecked():
                 continue
             is_at_least_one_tab_active = True
-            layer = tab['layer_combo'].currentLayer()
+            layer = tab["layer_combo"].currentLayer()
             if not isinstance(layer, QgsVectorLayer):
                 error_messages.append(
-                    self.tr("{0}: No layer selected.").format(tab['name'])
+                    self.tr("{0}: No layer selected.").format(tab["name"])
                 )
                 continue
-            if not tab['mat_combo'].currentField():
+
+            if not utils.is_line_layer(layer):
                 error_messages.append(
-                    self.tr("{0}: Material field is missing.").format(tab['name'])
+                    self.tr("{0}: Layer must be a line layer.").format(tab["name"])
                 )
-            if not tab['year_combo'].currentField():
+
+            if not tab["mat_combo"].currentField():
                 error_messages.append(
-                    self.tr("{0}: Year field is missing.").format(tab['name'])
+                    self.tr("{0}: Material field is missing.").format(tab["name"])
+                )
+            if not tab["year_combo"].currentField():
+                error_messages.append(
+                    self.tr("{0}: Year field is missing.").format(tab["name"])
                 )
             else:
-                year_field_name = tab['year_combo'].currentField()
+                year_field_name = tab["year_combo"].currentField()
                 if not layer.fields().field(year_field_name).isNumeric():
                     error_messages.append(
-                        self.tr("{0}: Year field must be numeric.").format(tab['name'])
+                        self.tr("{0}: Year field must be numeric.").format(tab["name"])
                     )
-            if not tab['dim_combo'].currentField():
+            if not tab["dim_combo"].currentField():
                 error_messages.append(
-                    self.tr("{0}: Dimension field is missing.").format(tab['name'])
+                    self.tr("{0}: Dimension field is missing.").format(tab["name"])
                 )
         if not is_at_least_one_tab_active:
-            error_messages.append(
-                self.tr("Select at least one pipe type to analyze.")
-            )
+            error_messages.append(self.tr("Select at least one pipe type to analyze."))
         if self.useTemporalAnalysis():
             if self.temporalStartYear() >= self.temporalEndYear():
                 error_messages.append(
@@ -502,62 +557,72 @@ class ReneWDialog(QDialog, FORM_CLASS):
     def save_settings(self):
         project = QgsProject.instance()
         project.writeEntry(
-            'reneW', 'municipalityFilter',
-            self.mMunicipalityFilterCombo.currentText()
+            "reneW", "municipalityFilter", self.mMunicipalityFilterCombo.currentText()
         )
         for tab in self.tabs:
             prefix = f"tab_{tab['name']}"
-            project.writeEntryBool('reneW', f'{prefix}_enabled',
-                                   tab['check'].isChecked())
-            if tab['layer_combo'].currentLayer():
-                project.writeEntry('reneW', f'{prefix}_layer',
-                                   tab['layer_combo'].currentLayer().id())
-            project.writeEntry('reneW', f'{prefix}_municipalityField',
-                               tab['muni_combo'].currentField())
-            project.writeEntry('reneW', f'{prefix}_materialField',
-                               tab['mat_combo'].currentField())
-            project.writeEntry('reneW', f'{prefix}_yearField',
-                               tab['year_combo'].currentField())
-            project.writeEntry('reneW', f'{prefix}_dimensionField',
-                               tab['dim_combo'].currentField())
-            project.writeEntry('reneW', f'{prefix}_renoYearField',
-                               tab['reno_year_combo'].currentField())
-            project.writeEntry('reneW', f'{prefix}_renoMethodField',
-                               tab['reno_method_combo'].currentField())
-        project.writeEntryBool('reneW', 'dimensionWeightingEnabled',
-                               self.useDimensionWeighting())
-        project.writeEntryDouble('reneW', 'dimensionFactor',
-                                 self.dimensionFactor())
-        project.writeEntryBool('reneW', 'hotspotAnalysisEnabled',
-                               self.useHotspotAnalysis())
-        project.writeEntryDouble('reneW', 'hotspotThreshold',
-                                 self.hotspotThreshold())
-        project.writeEntry('reneW', 'hotspotRadius', self.hotspotRadius())
-        project.writeEntryBool('reneW', 'temporalAnalysisEnabled',
-                               self.useTemporalAnalysis())
-        project.writeEntry('reneW', 'temporalStartYear',
-                           self.temporalStartYear())
-        project.writeEntry('reneW', 'temporalEndYear', self.temporalEndYear())
-        project.writeEntry('reneW', 'temporalStep', self.temporalStep())
-        project.writeEntry('reneW', 'numColorClasses', self.numColorClasses())
+            project.writeEntryBool(
+                "reneW", f"{prefix}_enabled", tab["check"].isChecked()
+            )
+            if tab["layer_combo"].currentLayer():
+                project.writeEntry(
+                    "reneW", f"{prefix}_layer", tab["layer_combo"].currentLayer().id()
+                )
+            project.writeEntry(
+                "reneW", f"{prefix}_municipalityField", tab["muni_combo"].currentField()
+            )
+            project.writeEntry(
+                "reneW", f"{prefix}_materialField", tab["mat_combo"].currentField()
+            )
+            project.writeEntry(
+                "reneW", f"{prefix}_yearField", tab["year_combo"].currentField()
+            )
+            project.writeEntry(
+                "reneW", f"{prefix}_dimensionField", tab["dim_combo"].currentField()
+            )
+            project.writeEntry(
+                "reneW",
+                f"{prefix}_renoYearField",
+                tab["reno_year_combo"].currentField(),
+            )
+            project.writeEntry(
+                "reneW",
+                f"{prefix}_renoMethodField",
+                tab["reno_method_combo"].currentField(),
+            )
+        project.writeEntryBool(
+            "reneW", "dimensionWeightingEnabled", self.useDimensionWeighting()
+        )
+        project.writeEntryDouble("reneW", "dimensionFactor", self.dimensionFactor())
+        project.writeEntryBool(
+            "reneW", "hotspotAnalysisEnabled", self.useHotspotAnalysis()
+        )
+        project.writeEntryDouble("reneW", "hotspotThreshold", self.hotspotThreshold())
+        project.writeEntry("reneW", "hotspotRadius", self.hotspotRadius())
+        project.writeEntryBool(
+            "reneW", "temporalAnalysisEnabled", self.useTemporalAnalysis()
+        )
+        project.writeEntry("reneW", "temporalStartYear", self.temporalStartYear())
+        project.writeEntry("reneW", "temporalEndYear", self.temporalEndYear())
+        project.writeEntry("reneW", "temporalStep", self.temporalStep())
+        project.writeEntry("reneW", "numColorClasses", self.numColorClasses())
 
         settings = QSettings()
-        settings.setValue("reneW/water_factor",
-                          self.water_factor_spinbox.value())
-        settings.setValue("reneW/wastewater_factor",
-                          self.wastewater_factor_spinbox.value())
-        settings.setValue("reneW/stormwater_factor",
-                          self.stormwater_factor_spinbox.value())
-        settings.setValue("prop_layer_idx",
-                          self.propertyLayerCombo.currentIndex())
-        settings.setValue("prop_year_field",
-                          self.propertyYearFieldCombo.currentText())
+        settings.setValue("reneW/water_factor", self.water_factor_spinbox.value())
+        settings.setValue(
+            "reneW/wastewater_factor", self.wastewater_factor_spinbox.value()
+        )
+        settings.setValue(
+            "reneW/stormwater_factor", self.stormwater_factor_spinbox.value()
+        )
+        settings.setValue("prop_layer_idx", self.propertyLayerCombo.currentIndex())
+        settings.setValue("prop_year_field", self.propertyYearFieldCombo.currentText())
         settings.setValue("prop_k_neighbors", self.kNeighborsSpin.value())
         settings.setValue("prop_fractions", self.sampleFractionsEdit.text())
 
     def load_settings(self):
         project = QgsProject.instance()
-        saved_municipality = project.readEntry('reneW', 'municipalityFilter', '')[0]
+        saved_municipality = project.readEntry("reneW", "municipalityFilter", "")[0]
         if saved_municipality:
             index = self.mMunicipalityFilterCombo.findText(saved_municipality)
             if index != -1:
@@ -568,61 +633,64 @@ class ReneWDialog(QDialog, FORM_CLASS):
                 layer = QgsProject.instance().mapLayer(layer_id)
                 if layer:
                     combo.setLayer(layer)
+
         for tab in self.tabs:
             prefix = f"tab_{tab['name']}"
-            tab['check'].setChecked(
-                project.readBoolEntry('reneW', f'{prefix}_enabled', False)[0]
+            tab["check"].setChecked(
+                project.readBoolEntry("reneW", f"{prefix}_enabled", False)[0]
             )
             set_layer_if_exists(
-                tab['layer_combo'], project.readEntry('reneW', f'{prefix}_layer', '')[0]
+                tab["layer_combo"], project.readEntry("reneW", f"{prefix}_layer", "")[0]
             )
-            tab['muni_combo'].setField(
-                project.readEntry('reneW', f'{prefix}_municipalityField', '')[0]
+            tab["muni_combo"].setField(
+                project.readEntry("reneW", f"{prefix}_municipalityField", "")[0]
             )
-            tab['mat_combo'].setField(
-                project.readEntry('reneW', f'{prefix}_materialField', '')[0]
+            tab["mat_combo"].setField(
+                project.readEntry("reneW", f"{prefix}_materialField", "")[0]
             )
-            tab['year_combo'].setField(
-                project.readEntry('reneW', f'{prefix}_yearField', '')[0]
+            tab["year_combo"].setField(
+                project.readEntry("reneW", f"{prefix}_yearField", "")[0]
             )
-            tab['dim_combo'].setField(
-                project.readEntry('reneW', f'{prefix}_dimensionField', '')[0]
+            tab["dim_combo"].setField(
+                project.readEntry("reneW", f"{prefix}_dimensionField", "")[0]
             )
-            tab['reno_year_combo'].setField(
-                project.readEntry('reneW', f'{prefix}_renoYearField', '')[0]
+            tab["reno_year_combo"].setField(
+                project.readEntry("reneW", f"{prefix}_renoYearField", "")[0]
             )
-            tab['reno_method_combo'].setField(
-                project.readEntry('reneW', f'{prefix}_renoMethodField', '')[0]
+            tab["reno_method_combo"].setField(
+                project.readEntry("reneW", f"{prefix}_renoMethodField", "")[0]
             )
         self.mCheckBoxEnableDimensionWeighting.setChecked(
-            project.readBoolEntry('reneW', 'dimensionWeightingEnabled', False)[0]
+            project.readBoolEntry("reneW", "dimensionWeightingEnabled", False)[0]
         )
         self.mSpinBoxDimensionFactor.setValue(
-            project.readDoubleEntry('reneW', 'dimensionFactor', 0.001)[0]
+            project.readDoubleEntry("reneW", "dimensionFactor", 0.001)[0]
         )
         self.mCheckBoxEnableHotspot.setChecked(
-            project.readBoolEntry('reneW', 'hotspotAnalysisEnabled', False)[0]
+            project.readBoolEntry("reneW", "hotspotAnalysisEnabled", False)[0]
         )
         self.mSpinBoxHotspotThreshold.setValue(
-            project.readDoubleEntry('reneW', 'hotspotThreshold', 0.75)[0]
+            project.readDoubleEntry("reneW", "hotspotThreshold", 0.75)[0]
         )
         self.mSpinBoxHotspotRadius.setValue(
-            int(project.readEntry('reneW', 'hotspotRadius', '50')[0])
+            int(project.readEntry("reneW", "hotspotRadius", "50")[0])
         )
         self.mTemporalGroupBox.setChecked(
-            project.readBoolEntry('reneW', 'temporalAnalysisEnabled', False)[0]
+            project.readBoolEntry("reneW", "temporalAnalysisEnabled", False)[0]
         )
         self.mTemporalStartYearSpinBox.setValue(
-            project.readNumEntry('reneW', 'temporalStartYear', datetime.now().year)[0]
+            project.readNumEntry("reneW", "temporalStartYear", datetime.now().year)[0]
         )
         self.mTemporalEndYearSpinBox.setValue(
-            project.readNumEntry('reneW', 'temporalEndYear', datetime.now().year + 40)[0]
+            project.readNumEntry("reneW", "temporalEndYear", datetime.now().year + 40)[
+                0
+            ]
         )
         self.mTemporalStepSpinBox.setValue(
-            project.readNumEntry('reneW', 'temporalStep', 5)[0]
+            project.readNumEntry("reneW", "temporalStep", 5)[0]
         )
         self.mNumClassesSpinBox.setValue(
-            project.readNumEntry('reneW', 'numColorClasses', 5)[0]
+            project.readNumEntry("reneW", "numColorClasses", 5)[0]
         )
 
         settings = QSettings()
@@ -645,9 +713,7 @@ class ReneWDialog(QDialog, FORM_CLASS):
         field = settings.value("prop_year_field", "")
         if field and self.propertyYearFieldCombo.findText(field) != -1:
             self.propertyYearFieldCombo.setCurrentText(field)
-        self.kNeighborsSpin.setValue(
-            int(settings.value("prop_k_neighbors", 15))
-        )
+        self.kNeighborsSpin.setValue(int(settings.value("prop_k_neighbors", 15)))
         self.sampleFractionsEdit.setText(
             settings.value("prop_fractions", "0,0.25,0.5,0.75,1")
         )

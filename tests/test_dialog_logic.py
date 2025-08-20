@@ -1,23 +1,31 @@
 import unittest
 import sys
 import os
-import json
 from unittest.mock import MagicMock, patch
 
 from tests.mock_utils import setup_qgis_mocks
+
 setup_qgis_mocks()
 
 # Add the parent directory to the Python path to allow sibling imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from reneW.parameter_editor_dialog import ParameterEditorDialog
 from reneW.reneW_dialog import ReneWDialog
 
+
 class TestParameterEditorDialog(unittest.TestCase):
     """Test suite for the refactored ParameterEditorDialog logic."""
 
-    @patch('reneW.parameter_editor_dialog.open', new_callable=unittest.mock.mock_open, read_data='{}')
-    @patch('reneW.parameter_editor_dialog.ParameterEditorDialog.__init__', lambda *args, **kwargs: None)
+    @patch(
+        "reneW.parameter_editor_dialog.open",
+        new_callable=unittest.mock.mock_open,
+        read_data="{}",
+    )
+    @patch(
+        "reneW.parameter_editor_dialog.ParameterEditorDialog.__init__",
+        lambda *args, **kwargs: None,
+    )
     def setUp(self, mock_open):
         """Set up a mock dialog for each test."""
         self.dialog = ParameterEditorDialog()
@@ -26,21 +34,27 @@ class TestParameterEditorDialog(unittest.TestCase):
         self.dialog.mBtnAddMaterialRow = MagicMock()
         self.dialog.mBtnRemoveMaterialRow = MagicMock()
         self.dialog.mButtonBox = MagicMock()
-        self.dialog.param_file = 'dummy_path.json'
+        self.dialog.param_file = "dummy_path.json"
         self.dialog.data = {
-            "material_defaults": {"pvc": {"mu": 60, "sigma": 5}, "segjarn": {"mu": 90, "sigma": 5}},
-            "water": {"segjarn": {"mu": 100, "sigma": 8}}, "sewer": {"spill": {}, "storm": {}}
+            "material_defaults": {
+                "pvc": {"mu": 60, "sigma": 5},
+                "segjarn": {"mu": 90, "sigma": 5},
+            },
+            "water": {"segjarn": {"mu": 100, "sigma": 8}},
+            "sewer": {"spill": {}, "storm": {}},
         }
 
-    @patch('reneW.parameter_editor_dialog.QTableWidgetItem')
-    @patch('reneW.parameter_editor_dialog.QFont')
+    @patch("reneW.parameter_editor_dialog.QTableWidgetItem")
+    @patch("reneW.parameter_editor_dialog.QFont")
     def test_populate_table_merged_view(self, mock_qfont, mock_qtablewidgetitem):
         """Test that the table shows a merged view of defaults and overrides."""
+
         # Configure the mock for QTableWidgetItem to behave like the real thing
-        def mock_qtablewidgetitem_factory(text=''):
+        def mock_qtablewidgetitem_factory(text=""):
             mock_item = MagicMock()
             mock_item.text.return_value = str(text)
             return mock_item
+
         mock_qtablewidgetitem.side_effect = mock_qtablewidgetitem_factory
 
         italic_font_instance = mock_qfont.return_value
@@ -59,43 +73,50 @@ class TestParameterEditorDialog(unittest.TestCase):
         # Get the item mocks that were passed to setItem
         calls = self.dialog.mMaterialsTable.setItem.call_args_list
         # Create a dictionary of {text: item_mock} for the key items (column 0)
-        items = {call.args[2].text(): call.args[2] for call in calls if call.args[1] == 0}
-
+        items = {
+            call.args[2].text(): call.args[2] for call in calls if call.args[1] == 0
+        }
 
         # 'pvc' is a default, so its key item should get the italic font
-        self.assertIn('pvc', items)
-        items['pvc'].setFont.assert_called_with(italic_font_instance)
+        self.assertIn("pvc", items)
+        items["pvc"].setFont.assert_called_with(italic_font_instance)
 
         # 'segjarn' is an override, so its key item should NOT get the italic font
-        self.assertIn('segjarn', items)
-        items['segjarn'].setFont.assert_not_called()
+        self.assertIn("segjarn", items)
+        items["segjarn"].setFont.assert_not_called()
 
-    @patch('reneW.parameter_editor_dialog.json.dump')
+    @patch("reneW.parameter_editor_dialog.json.dump")
     def test_save_data_with_overrides(self, mock_json_dump):
         """Test that only overrides and new materials are saved."""
         self.dialog.mPipeTypeCombo.currentText.return_value = "water"
         self.dialog.mMaterialsTable.rowCount.return_value = 3
+
         def item_side_effect(row, col):
             mock_cell = MagicMock()
-            if row == 0: mock_cell.text.return_value = ['pvc', '60', '5'][col].strip()
-            elif row == 1: mock_cell.text.return_value = ['segjarn', '110.5', '9.5'][col].strip()
-            elif row == 2: mock_cell.text.return_value = ['new_mat', '99', '9'][col].strip()
+            if row == 0:
+                mock_cell.text.return_value = ["pvc", "60", "5"][col].strip()
+            elif row == 1:
+                mock_cell.text.return_value = ["segjarn", "110.5", "9.5"][col].strip()
+            elif row == 2:
+                mock_cell.text.return_value = ["new_mat", "99", "9"][col].strip()
             return mock_cell
+
         self.dialog.mMaterialsTable.item.side_effect = item_side_effect
-        with patch('builtins.open', unittest.mock.mock_open()):
+        with patch("builtins.open", unittest.mock.mock_open()):
             self.dialog.accept()
         written_data = mock_json_dump.call_args[0][0]
-        saved_water_bucket = written_data['water']
-        self.assertNotIn('pvc', saved_water_bucket)
-        self.assertIn('segjarn', saved_water_bucket)
-        self.assertEqual(saved_water_bucket['segjarn']['mu'], 110.5)
-        self.assertIn('new_mat', saved_water_bucket)
-        self.assertEqual(saved_water_bucket['new_mat']['mu'], 99)
+        saved_water_bucket = written_data["water"]
+        self.assertNotIn("pvc", saved_water_bucket)
+        self.assertIn("segjarn", saved_water_bucket)
+        self.assertEqual(saved_water_bucket["segjarn"]["mu"], 110.5)
+        self.assertIn("new_mat", saved_water_bucket)
+        self.assertEqual(saved_water_bucket["new_mat"]["mu"], 99)
+
 
 class TestReneWDialog(unittest.TestCase):
     """Test suite for the ReneWDialog data handling logic."""
 
-    @patch('reneW.reneW_dialog.ReneWDialog.__init__', lambda *args, **kwargs: None)
+    @patch("reneW.reneW_dialog.ReneWDialog.__init__", lambda *args, **kwargs: None)
     def setUp(self):
         """Set up a mock dialog for each test."""
         self.dialog = ReneWDialog()
@@ -110,7 +131,9 @@ class TestReneWDialog(unittest.TestCase):
         self.dialog.mSpinBoxHotspotThreshold = MagicMock()
         self.dialog.mSpinBoxHotspotRadius = MagicMock()
         self.dialog.mTemporalGroupBox = MagicMock()
-        self.dialog.mTemporalGroupBox.isChecked.return_value = False  # Default to disabled
+        self.dialog.mTemporalGroupBox.isChecked.return_value = (
+            False  # Default to disabled
+        )
         self.dialog.mTemporalStartYearSpinBox = MagicMock()
         self.dialog.mTemporalStartYearSpinBox.value.return_value = 2025
         self.dialog.mTemporalEndYearSpinBox = MagicMock()
@@ -125,7 +148,16 @@ class TestReneWDialog(unittest.TestCase):
         self.dialog.mButtonBox.button.return_value = mock_ok_button
         mock_layer = MagicMock()
         mock_layer.fields.return_value.field.return_value.isNumeric.return_value = True
-        self.dialog.tabs = [{'name': 'Water', 'check': MagicMock(isChecked=lambda: True), 'layer_combo': MagicMock(currentLayer=lambda: mock_layer), 'mat_combo': MagicMock(currentField=lambda: 'mat'), 'year_combo': MagicMock(currentField=lambda: 'year'), 'dim_combo': MagicMock(currentField=lambda: 'dim')}]
+        self.dialog.tabs = [
+            {
+                "name": "Water",
+                "check": MagicMock(isChecked=lambda: True),
+                "layer_combo": MagicMock(currentLayer=lambda: mock_layer),
+                "mat_combo": MagicMock(currentField=lambda: "mat"),
+                "year_combo": MagicMock(currentField=lambda: "year"),
+                "dim_combo": MagicMock(currentField=lambda: "dim"),
+            }
+        ]
         self.dialog.mTemporalGroupBox.isChecked.return_value = True
         self.dialog.mTemporalStartYearSpinBox.value.return_value = 2050
         self.dialog.mTemporalEndYearSpinBox.value.return_value = 2040

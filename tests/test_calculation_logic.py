@@ -1,15 +1,14 @@
 # test_calculation_logic.py
-import math
 import unittest
 import sys
 import os
-from unittest.mock import MagicMock
 
 from tests.mock_utils import setup_qgis_mocks
+
 setup_qgis_mocks()
 
 # Add the parent directory to the Python path to allow sibling imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from reneW.calculation_logic import (
     Cohort,
@@ -17,7 +16,6 @@ from reneW.calculation_logic import (
     renewal_for_cohort_period,
     renewal_totals,
     decades_from,
-    cumulative_by_period,
     derive_sigma_from_t50_t90,
 )
 
@@ -66,5 +64,5 @@ class TestCalculationLogic(unittest.TestCase):
         self.assertAlmostEqual(sigma, 0.0, places=9)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

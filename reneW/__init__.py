@@ -12,12 +12,9 @@ def classFactory(iface):
     :type iface: QgsInterface
     """
     # Get the system locale
-    locale = QSettings().value('locale/userLocale', 'en')[0:2]
+    locale = QSettings().value("locale/userLocale", "en")[0:2]
     plugin_dir = os.path.dirname(__file__)
-    locale_path = os.path.join(
-        plugin_dir,
-        'i18n',
-        f'{locale}.qm')
+    locale_path = os.path.join(plugin_dir, "i18n", f"{locale}.qm")
 
     # Load the translation file
     if os.path.exists(locale_path):

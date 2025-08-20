@@ -1,5 +1,6 @@
-def suggest_intervention(pipe_type: str, material: str, age: int,
-                         renewal_need: float) -> str:
+def suggest_intervention(
+    pipe_type: str, material: str, age: int, renewal_need: float
+) -> str:
     """
     Suggests an intervention strategy for a pipe.
     """

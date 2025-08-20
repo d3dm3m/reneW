@@ -59,12 +59,8 @@ def renewal_for_cohort_period(
     age0 = t0 - cohort.install_year
     age1 = t1 - cohort.install_year
 
-    F0 = 0.0 if age0 <= 0 else clamp01(
-        normal_cdf(age0, params.mu, params.sigma)
-    )
-    F1 = 0.0 if age1 <= 0 else clamp01(
-        normal_cdf(age1, params.mu, params.sigma)
-    )
+    F0 = 0.0 if age0 <= 0 else clamp01(normal_cdf(age0, params.mu, params.sigma))
+    F1 = 0.0 if age1 <= 0 else clamp01(normal_cdf(age1, params.mu, params.sigma))
 
     dF = F1 - F0
     if dF <= 0:
@@ -79,7 +75,7 @@ def renewal_totals(
 ) -> List[float]:
     """Return total renewals (km) per period across all cohorts."""
     totals: List[float] = []
-    for (t0, t1) in periods:
+    for t0, t1 in periods:
         s = 0.0
         for c in cohorts:
             mp = materials[c.material_key]
@@ -114,6 +110,7 @@ def cumulative_failure_probability(cohort, year, params):
     for a given cohort up to the given year.
     """
     import math
+
     t = max(0, year - cohort.install_year)
     mu = params.mu
     sigma = params.sigma

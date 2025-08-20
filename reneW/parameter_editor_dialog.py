@@ -1,13 +1,13 @@
 import os
 import json
 from qgis.PyQt import uic
-from qgis.PyQt.QtWidgets import (QDialog, QTableWidgetItem, QMessageBox,
-                                 QInputDialog, QHeaderView)
+from qgis.PyQt.QtWidgets import QDialog, QTableWidgetItem
 from qgis.PyQt.QtGui import QFont, QColor
 
 
-FORM_CLASS, _ = uic.loadUiType(os.path.join(
-    os.path.dirname(__file__), 'parameter_editor_dialog.ui'))
+FORM_CLASS, _ = uic.loadUiType(
+    os.path.join(os.path.dirname(__file__), "parameter_editor_dialog.ui")
+)
 
 
 class ParameterEditorDialog(QDialog, FORM_CLASS):
@@ -19,8 +19,7 @@ class ParameterEditorDialog(QDialog, FORM_CLASS):
         self.mBtnAddMaterialRow.setText("Add/Override Material")
         self.mBtnRemoveMaterialRow.setText("Remove Override/Material")
 
-        self.param_file = os.path.join(
-            os.path.dirname(__file__), 'parameters.json')
+        self.param_file = os.path.join(os.path.dirname(__file__), "parameters.json")
         self.data = {}
         self._load_data()
         self._populate_combo()
@@ -35,14 +34,14 @@ class ParameterEditorDialog(QDialog, FORM_CLASS):
     def _load_data(self):
         """Loads the parameters.json file."""
         try:
-            with open(self.param_file, 'r', encoding='utf-8') as f:
+            with open(self.param_file, "r", encoding="utf-8") as f:
                 self.data = json.load(f)
         except (IOError, json.JSONDecodeError):
             self.data = {
                 "material_defaults": {},
                 "water": {},
                 "sewer": {"spill": {}, "storm": {}},
-                "municipalities": []
+                "municipalities": [],
             }
 
     def _populate_combo(self):
@@ -63,7 +62,7 @@ class ParameterEditorDialog(QDialog, FORM_CLASS):
         if selected_path == "--- Edit Defaults ---":
             return default_bucket, None
 
-        path_parts = selected_path.split('/')
+        path_parts = selected_path.split("/")
         domain_bucket = self.data
         for part in path_parts:
             domain_bucket = domain_bucket.get(part, {})
@@ -83,20 +82,18 @@ class ParameterEditorDialog(QDialog, FORM_CLASS):
             self.mBtnAddMaterialRow.setText("Add/Override Material")
             self.mBtnRemoveMaterialRow.setText("Remove Override")
 
-        all_keys = sorted(
-            list(set(domain_bucket.keys()) | set(default_bucket.keys()))
-        )
+        all_keys = sorted(list(set(domain_bucket.keys()) | set(default_bucket.keys())))
         self.mMaterialsTable.setRowCount(len(all_keys))
 
         italic_font = QFont()
         italic_font.setItalic(True)
-        default_color = QColor('gray')
+        default_color = QColor("gray")
 
         for row_idx, key in enumerate(all_keys):
             is_override = key in domain_bucket
             params = domain_bucket.get(key, default_bucket.get(key, {}))
-            mu = str(params.get('mu', ''))
-            sigma = str(params.get('sigma', ''))
+            mu = str(params.get("mu", ""))
+            sigma = str(params.get("sigma", ""))
 
             key_item = QTableWidgetItem(key)
             mu_item = QTableWidgetItem(mu)
@@ -162,12 +159,12 @@ class ParameterEditorDialog(QDialog, FORM_CLASS):
                     mu = float(self.mMaterialsTable.item(row, 1).text())
                     sigma = float(self.mMaterialsTable.item(row, 2).text())
                     if key:
-                        new_materials[key] = {'mu': mu, 'sigma': sigma}
+                        new_materials[key] = {"mu": mu, "sigma": sigma}
                 except (ValueError, AttributeError, TypeError, IndexError):
                     continue
             self.data["material_defaults"] = new_materials
         else:
-            path_parts = selected_path.split('/')
+            path_parts = selected_path.split("/")
             parent_dict = self.data
             for part in path_parts[:-1]:
                 parent_dict = parent_dict.setdefault(part, {})
@@ -186,22 +183,26 @@ class ParameterEditorDialog(QDialog, FORM_CLASS):
                     default_params = default_bucket.get(key)
                     is_override = not default_params
                     if default_params:
-                        same_mu = abs(mu - default_params.get('mu', float('nan'))) < 1e-9
-                        same_sigma = abs(sigma - default_params.get('sigma', float('nan'))) < 1e-9
+                        same_mu = (
+                            abs(mu - default_params.get("mu", float("nan"))) < 1e-9
+                        )
+                        same_sigma = (
+                            abs(sigma - default_params.get("sigma", float("nan")))
+                            < 1e-9
+                        )
                         if not (same_mu and same_sigma):
                             is_override = True
 
                     if is_override:
-                        new_overrides[key] = {'mu': mu, 'sigma': sigma}
+                        new_overrides[key] = {"mu": mu, "sigma": sigma}
 
                 except (ValueError, AttributeError, TypeError, IndexError):
                     continue
             parent_dict[leaf_key] = new_overrides
 
         try:
-            with open(self.param_file, 'w', encoding='utf-8') as f:
-                json.dump(self.data, f, indent=2,
-                          ensure_ascii=False, sort_keys=True)
+            with open(self.param_file, "w", encoding="utf-8") as f:
+                json.dump(self.data, f, indent=2, ensure_ascii=False, sort_keys=True)
         except IOError:
             pass
 

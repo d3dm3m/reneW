@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from tests.mock_utils import setup_qgis_mocks
 
+
 def run_all_tests():
     """
     A custom test runner that sets up mocks before discovering and running tests.
@@ -19,7 +20,7 @@ def run_all_tests():
     # 2. Discover all tests in the 'tests' directory
     print("Discovering tests...")
     loader = unittest.TestLoader()
-    suite = loader.discover(start_dir='tests', pattern='test_*.py')
+    suite = loader.discover(start_dir="tests", pattern="test_*.py")
     print(f"Found {suite.countTestCases()} tests.")
 
     # 3. Run the discovered tests with a text runner.
@@ -27,7 +28,7 @@ def run_all_tests():
     runner = unittest.TextTestRunner(verbosity=2)
     result = runner.run(suite)
 
-    # 4. Exit with a non-zero status code if any tests failed, to support CI/CD pipelines.
+    # 4. Exit with a non-zero status code if any tests failed.
     if not result.wasSuccessful():
         print("Test suite failed.")
         sys.exit(1)
@@ -35,5 +36,6 @@ def run_all_tests():
         print("Test suite passed successfully.")
         sys.exit(0)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     run_all_tests()

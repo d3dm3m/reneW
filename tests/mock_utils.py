@@ -1,6 +1,7 @@
 import sys
 from unittest.mock import MagicMock
 
+
 def setup_qgis_mocks():
     """
     Sets up a robust mock of the QGIS and PyQt environment in sys.modules.
@@ -22,35 +23,44 @@ def setup_qgis_mocks():
     pyqt_widgets_mock = MagicMock()
 
     # Place the mocks in sys.modules to intercept imports
-    sys.modules['qgis'] = qgis_mock
-    sys.modules['qgis.core'] = qgis_core_mock
-    sys.modules['qgis.gui'] = qgis_gui_mock
-    sys.modules['qgis.symbology'] = qgis_symbology_mock
-    sys.modules['qgis.analysis'] = qgis_analysis_mock
-    sys.modules['qgis.processing'] = qgis_processing_mock
-    sys.modules['qgis.PyQt'] = pyqt_mock
-    sys.modules['qgis.PyQt.QtCore'] = pyqt_core_mock
-    sys.modules['qgis.PyQt.QtGui'] = pyqt_gui_mock
-    sys.modules['qgis.PyQt.QtWidgets'] = pyqt_widgets_mock
+    sys.modules["qgis"] = qgis_mock
+    sys.modules["qgis.core"] = qgis_core_mock
+    sys.modules["qgis.gui"] = qgis_gui_mock
+    sys.modules["qgis.symbology"] = qgis_symbology_mock
+    sys.modules["qgis.analysis"] = qgis_analysis_mock
+    sys.modules["qgis.processing"] = qgis_processing_mock
+    sys.modules["qgis.PyQt"] = pyqt_mock
+    sys.modules["qgis.PyQt.QtCore"] = pyqt_core_mock
+    sys.modules["qgis.PyQt.QtGui"] = pyqt_gui_mock
+    sys.modules["qgis.PyQt.QtWidgets"] = pyqt_widgets_mock
 
     # Mock specific classes and functions that are used at import time
     # or are required for subclassing in the application code.
 
     # Mock QDialog as a class 'type' to prevent metaclass conflicts
-    mock_qdialog_class = type('MockQDialog', (object,), {
-        '__init__': lambda self, parent=None: None,
-        'accept': lambda self: None,
-        'reject': lambda self: None,
-        'exec_': lambda self: None
-    })
+    mock_qdialog_class = type(
+        "MockQDialog",
+        (object,),
+        {
+            "__init__": lambda self, parent=None: None,
+            "accept": lambda self: None,
+            "reject": lambda self: None,
+            "exec_": lambda self: None,
+        },
+    )
     pyqt_widgets_mock.QDialog = mock_qdialog_class
 
     # Mock QgsVectorLayer as a class 'type' with necessary attributes for validation
-    mock_qgsvectorlayer_class = type('MockQgsVectorLayer', (object,), {
-        # The dialog checks layer.fields().field(name).isNumeric()
-        'fields': MagicMock()
-    })
+    mock_qgsvectorlayer_class = type(
+        "MockQgsVectorLayer",
+        (object,),
+        {
+            # The dialog checks layer.fields().field(name).isNumeric()
+            "fields": MagicMock()
+        },
+    )
     qgis_core_mock.QgsVectorLayer = mock_qgsvectorlayer_class
+    qgis_core_mock.QgsWkbTypes.LineGeometry = 1
 
     # Make QgsFeature return a new mock each time to allow testing feature creation
     qgis_core_mock.QgsFeature.side_effect = lambda *args: MagicMock()
@@ -77,5 +87,5 @@ def setup_qgis_mocks():
         widget_instance.mSpinBoxDimensionFactor = MagicMock()
         widget_instance.mStatusLabel = MagicMock()
 
-    mock_form_class = type('MockForm', (object,), {'setupUi': mock_setup_ui})
+    mock_form_class = type("MockForm", (object,), {"setupUi": mock_setup_ui})
     pyqt_mock.uic.loadUiType.return_value = (mock_form_class, object)
