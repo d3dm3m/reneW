@@ -20,6 +20,12 @@ except ImportError:
 from . import utils, calculation_logic, material_lookup
 
 
+try:
+    ISO_FMT = Qt.ISODate  # Qt5
+except AttributeError:
+    ISO_FMT = Qt.DateFormat.ISODate  # Qt6
+
+
 class ReneWApi:
     """
     Public API for reneW plugin.
@@ -284,10 +290,8 @@ class ReneWApi:
                             yr,
                             pipe_type_name,
                             float(renewal_need),
-                            QDateTime.fromString(f"{yr}-01-01T00:00:00", Qt.ISODate),
-                            QDateTime.fromString(
-                                f"{end_dt}-01-01T00:00:00", Qt.ISODate
-                            ),
+                            QDateTime.fromString(f"{yr}-01-01T00:00:00", ISO_FMT),
+                            QDateTime.fromString(f"{end_dt}-01-01T00:00:00", ISO_FMT),
                             mat_val,
                             dim_val,
                             age,
