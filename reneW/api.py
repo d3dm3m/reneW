@@ -9,10 +9,14 @@ from qgis.core import (
     QgsFields,
     QgsFeature,
     QgsFeatureRequest,
-    QDateTime,
     QgsProcessingFeedback,
 )
 from qgis.PyQt.QtCore import QVariant, Qt
+
+try:
+    from PyQt6.QtCore import QDateTime
+except ImportError:
+    from PyQt5.QtCore import QDateTime
 from . import utils, calculation_logic, material_lookup
 
 
