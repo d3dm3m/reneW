@@ -100,6 +100,9 @@ class ParameterEditorDialog(QDialog, FORM_CLASS):
         for row_idx, key in enumerate(all_keys):
             is_override = key in domain_bucket
             params = domain_bucket.get(key, default_bucket.get(key, {}))
+
+            if not isinstance(params, dict):
+                continue
             mu = str(params.get("mu", ""))
             sigma = str(params.get("sigma", ""))
 
