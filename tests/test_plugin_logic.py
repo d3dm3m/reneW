@@ -12,7 +12,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from reneW.reneW import ReneW
 from reneW.calculation_logic import MaterialParams
-from qgis.core import QgsPointXY, QgsWkbTypes
 
 
 class TestReneWPluginLogic(unittest.TestCase):
@@ -72,6 +71,7 @@ class TestReneWPluginLogic(unittest.TestCase):
             if index == 1:
                 return 2000
             return None
+
         mock_feature.attribute.side_effect = attribute_side_effect
         mock_feature.geometry.return_value = MagicMock()
         mock_feature.id.return_value = 1
@@ -93,7 +93,9 @@ class TestReneWPluginLogic(unittest.TestCase):
         # --- Assertions ---
         # Check that a new memory layer was created
         mock_qgs_vector_layer.assert_called_with(
-            unittest.mock.ANY, "Temporal Renewal Need", "memory"
+            unittest.mock.ANY,
+            "Temporal Renewal Need",
+            "memory",
         )
 
         # Get the mock for the new layer's data provider
@@ -104,10 +106,10 @@ class TestReneWPluginLogic(unittest.TestCase):
         self.assertEqual(mock_provider.addFeatures.call_count, 5)
 
         # Check the attributes of the first feature created
-        # The mock QgsFeature returns a new mock each time, so we can't check attributes directly.
+        # The mock QgsFeature returns a new mock each time, so we can't
+        # check attributes directly.
         # Instead, we check that addFeatures was called with a list of features.
         self.assertEqual(len(mock_provider.addFeatures.call_args[0][0]), 1)
-
 
 
 if __name__ == "__main__":

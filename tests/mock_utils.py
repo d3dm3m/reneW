@@ -74,8 +74,8 @@ def setup_qgis_mocks():
         """
         widget_instance.mButtonBox = MagicMock()
         widget_instance.mPipeTypeCombo = MagicMock()
-        widget_instance.mBtnAddMaterialRow = MagicMock()
-        widget_instance.mBtnRemoveMaterialRow = MagicMock()
+        widget_instance.mBtnAddRow = MagicMock()
+        widget_instance.mBtnRemoveRow = MagicMock()
         widget_instance.mMaterialsTable = MagicMock()
         widget_instance.groupBox = MagicMock()
         widget_instance.verticalLayout_2 = MagicMock()

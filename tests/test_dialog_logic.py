@@ -31,8 +31,8 @@ class TestParameterEditorDialog(unittest.TestCase):
         self.dialog = ParameterEditorDialog()
         self.dialog.mPipeTypeCombo = MagicMock()
         self.dialog.mMaterialsTable = MagicMock()
-        self.dialog.mBtnAddMaterialRow = MagicMock()
-        self.dialog.mBtnRemoveMaterialRow = MagicMock()
+        self.dialog.mBtnAddRow = MagicMock()
+        self.dialog.mBtnRemoveRow = MagicMock()
         self.dialog.mButtonBox = MagicMock()
         self.dialog.param_file = "dummy_path.json"
         self.dialog.data = {

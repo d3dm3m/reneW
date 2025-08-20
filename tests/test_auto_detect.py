@@ -39,8 +39,6 @@ class TestAutoDetectLogic(unittest.TestCase):
         self.assertEqual(_norm(None), "")
         self.assertEqual(_norm(123), "123")
 
-
-
     def test_apply_detected_to_ui(self):
         """Test the UI application logic."""
         # --- Setup Mocks ---

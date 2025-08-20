@@ -16,8 +16,10 @@ class ParameterEditorDialog(QDialog, FORM_CLASS):
         super(ParameterEditorDialog, self).__init__(parent)
         self.setupUi(self)
 
-        self.mBtnAddMaterialRow.setText("Add/Override Material")
-        self.mBtnRemoveMaterialRow.setText("Remove Override/Material")
+        if hasattr(self, "mBtnAddRow"):
+            self.mBtnAddRow.setText("Add/Override Material")
+        if hasattr(self, "mBtnRemoveRow"):
+            self.mBtnRemoveRow.setText("Remove Override/Material")
 
         self.param_file = os.path.join(os.path.dirname(__file__), "parameters.json")
         self.data = {}
@@ -25,8 +27,10 @@ class ParameterEditorDialog(QDialog, FORM_CLASS):
         self._populate_combo()
 
         self.mPipeTypeCombo.currentIndexChanged.connect(self._populate_table)
-        self.mBtnAddMaterialRow.clicked.connect(self._add_row)
-        self.mBtnRemoveMaterialRow.clicked.connect(self._remove_row)
+        if hasattr(self, "mBtnAddRow"):
+            self.mBtnAddRow.clicked.connect(self._add_row)
+        if hasattr(self, "mBtnRemoveRow"):
+            self.mBtnRemoveRow.clicked.connect(self._remove_row)
         self.mButtonBox.accepted.connect(self.accept)
 
         self._populate_table()
@@ -76,11 +80,15 @@ class ParameterEditorDialog(QDialog, FORM_CLASS):
 
         if default_bucket is None:
             default_bucket = {}
-            self.mBtnAddMaterialRow.setText("Add Material")
-            self.mBtnRemoveMaterialRow.setText("Remove Material")
+            if hasattr(self, "mBtnAddRow"):
+                self.mBtnAddRow.setText("Add Material")
+            if hasattr(self, "mBtnRemoveRow"):
+                self.mBtnRemoveRow.setText("Remove Material")
         else:
-            self.mBtnAddMaterialRow.setText("Add/Override Material")
-            self.mBtnRemoveMaterialRow.setText("Remove Override")
+            if hasattr(self, "mBtnAddRow"):
+                self.mBtnAddRow.setText("Add/Override Material")
+            if hasattr(self, "mBtnRemoveRow"):
+                self.mBtnRemoveRow.setText("Remove Override")
 
         all_keys = sorted(list(set(domain_bucket.keys()) | set(default_bucket.keys())))
         self.mMaterialsTable.setRowCount(len(all_keys))

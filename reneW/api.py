@@ -131,7 +131,9 @@ class ReneWApi:
                 continue
 
             cohort = calculation_logic.Cohort(
-                length_km=1.0, install_year=adjusted_install_year, material_key=key
+                length_km=1.0,
+                install_year=adjusted_install_year,
+                material_key=key,
             )
             renewal_need = calculation_logic.renewal_for_cohort_period(
                 cohort, current_year, current_year + 1, params
@@ -257,7 +259,8 @@ class ReneWApi:
                         )
                     except KeyError:
                         utils.log_warn(
-                            f"Missing parameters for {domain}/{mat_val}; using defaults."
+                            f"Missing parameters for {domain}/{mat_val}; "
+                            "using defaults."
                         )
                         params = material_lookup.MaterialParams(mu=80, sigma=20)
                         key = "default"
@@ -271,6 +274,7 @@ class ReneWApi:
                         int(max(0, params.mu - age)) if hasattr(params, "mu") else None
                     )
 
+                    end_dt = min(yr + max(1, step), end_year + 1)
                     f = QgsFeature(fields)
                     f.setGeometry(feat.geometry())
                     f.setAttributes(
@@ -282,8 +286,7 @@ class ReneWApi:
                             float(renewal_need),
                             QDateTime.fromString(f"{yr}-01-01T00:00:00", Qt.ISODate),
                             QDateTime.fromString(
-                                f"{min(yr + max(1, step), end_year + 1)}-01-01T00:00:00",  # noqa
-                                Qt.ISODate,
+                                f"{end_dt}-01-01T00:00:00", Qt.ISODate
                             ),
                             mat_val,
                             dim_val,
