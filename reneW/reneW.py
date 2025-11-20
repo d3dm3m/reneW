@@ -4,11 +4,23 @@ from datetime import datetime
 from qgis.PyQt.QtWidgets import QAction, QProgressDialog
 from qgis.PyQt.QtGui import QIcon, QColor
 from qgis.PyQt.QtCore import QVariant, Qt
-from qgis.core import (QgsProject, QgsVectorLayer, QgsField, QgsGeometry,
-                     QgsFeature, QgsFillSymbol, QgsSimpleFillSymbolLayer,
-                     QgsGraduatedSymbolRenderer, QgsSymbol, QgsRendererRange,
-                     QgsStyle, QgsSimpleLineSymbolLayer)
-from qgis.gui import QgsBlurEffect
+
+# HOLISTIC IMPORT FIX: All render effects and symbol layers are in qgis.core
+from qgis.core import (
+    QgsProject,
+    QgsVectorLayer,
+    QgsField,
+    QgsGeometry,
+    QgsFeature,
+    QgsFillSymbol,
+    QgsSimpleFillSymbolLayer,
+    QgsSimpleLineSymbolLayer,
+    QgsGraduatedSymbolRenderer,
+    QgsSymbol,
+    QgsRendererRange,
+    QgsStyle,
+    QgsBlurEffect # Moved from gui to core
+)
 
 # Import the code for the dialog and the calculation logic
 from .reneW_dialog import ReneWDialog
@@ -214,11 +226,6 @@ class ReneW:
     def _generate_project_bundles(self, high_risk_results, crs, score_threshold=2.0):
         """
         Clusters high risk features into 'Project Bundles'.
-
-        :param high_risk_results: List of dicts containing result data.
-        :param crs: QgsCoordinateReferenceSystem for the output layer.
-        :param score_threshold: Minimum RISK_SCORE (PoF * CoF) to consider for bundling.
-                                Default 2.0 (Low probability but High consequence, or High prob Medium cons).
         """
         if not high_risk_results:
             return
@@ -238,7 +245,6 @@ class ReneW:
                     geoms.append(f.geometry())
 
         if not geoms:
-            # If filtering removed everything, stop.
             return
 
         # 2. Buffer & Dissolve
@@ -271,8 +277,6 @@ class ReneW:
             # Calculate Total Risk for this bundle
             bundle_risk = 0.0
 
-            # Re-iterate ALL high risk items to sum cost (even if score < threshold)
-            # If they fall inside the "Project Zone", they should be fixed too (economies of scale).
             for item in high_risk_results:
                  layer = QgsProject.instance().mapLayer(item['layer_id'])
                  if layer:
@@ -290,6 +294,7 @@ class ReneW:
         # 4. Style the Project Layer
         symbol = QgsFillSymbol()
         symbol.deleteSymbolLayer(0)
+        # FIX: Use QgsSimpleFillSymbolLayer
         symbol_layer = QgsSimpleFillSymbolLayer.create({
             'color': '0,0,255,0', # Transparent fill
             'outline_color': '0,0,255,255', # Blue outline
@@ -379,20 +384,21 @@ class ReneW:
         aura_symbol.deleteSymbolLayer(0)
 
         # Glow layers (multiple blurred layers)
-        # The blur radius and color can be adjusted for different visual effects
         for blur_radius, opacity, color in [(12, 20, '255,50,50'), (8, 40, '255,0,0'), (4, 70, '200,0,0')]:
+            # FIX: Use QgsSimpleFillSymbolLayer
             glow_fill = QgsSimpleFillSymbolLayer.create({'color': f'{color},{opacity}', 'style': 'solid'})
 
+            # FIX: QgsBlurEffect is in core
             blur_effect = QgsBlurEffect()
             blur_effect.setBlurRadius(blur_radius)
-            glow_fill.setEffect(blur_effect)
+            glow_fill.setPaintEffect(blur_effect)
 
             aura_symbol.appendSymbolLayer(glow_fill)
 
         # 4. Apply the style to the layer
         renderer = vl.renderer()
         renderer.setSymbol(aura_symbol)
-        vl.triggerRepaint() # To make the style apply visually
+        vl.triggerRepaint()
 
         # 5. Add the layer to the project
         QgsProject.instance().addMapLayer(vl)
