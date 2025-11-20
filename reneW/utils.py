@@ -29,24 +29,26 @@ class ParameterLoader:
         """
         Returns the parameters for a specific pipeline type (e.g., 'Avlopp', 'Vatten').
         """
-        params = cls.load_parameters()
-        return params.get(pipeline_type, {})
+        data = cls.load_parameters()
+        # Check if 'parameters' key exists (new v2 structure), else fallback
+        params_root = data.get('parameters', data)
+        return params_root.get(pipeline_type, {})
 
     @classmethod
     def get_unit_costs(cls):
         """
         Returns the unit costs dictionary.
         """
-        params = cls.load_parameters()
-        return params.get('unit_costs', {})
+        data = cls.load_parameters()
+        return data.get('unit_costs', {})
 
     @classmethod
     def get_defaults(cls):
         """
         Returns the defaults configuration dictionary.
         """
-        params = cls.load_parameters()
-        return params.get('defaults', {})
+        data = cls.load_parameters()
+        return data.get('defaults', {})
 
 class DataSanitizer:
     """
@@ -63,14 +65,11 @@ class DataSanitizer:
         substitute = defaults.get("unknown_year_substitute", 1980)
         null_markers = defaults.get("null_markers", {}).get("year", [])
 
-        # Convert input to check against markers
         val_to_check = raw_year
 
-        # Check if it's a marker
         if val_to_check in null_markers:
             return substitute
 
-        # Also check string representation if raw_year is int/float
         if str(val_to_check) in [str(m) for m in null_markers]:
              return substitute
 
@@ -86,8 +85,6 @@ class DataSanitizer:
     def sanitize_dimension(raw_dim):
         """
         Sanitizes the dimension.
-        Handles null markers ("-", "--") and parsing of complex strings ("225_I").
-        Returns float or substitute (150).
         """
         defaults = ParameterLoader.get_defaults()
         substitute = defaults.get("unknown_dimension_substitute", 150.0)
@@ -102,14 +99,10 @@ class DataSanitizer:
         if raw_dim is None:
             return float(substitute)
 
-        # Attempt parse
         try:
             if isinstance(raw_dim, (int, float)):
                 return float(raw_dim)
             elif isinstance(raw_dim, str):
-                 # Clean string logic moved from risk_manager
-                 # Extract numeric part before any non-numeric characters (except dot)
-                 # e.g. "225_I" -> 225
                  numeric_part = ''.join(filter(lambda c: c.isdigit() or c == '.', raw_dim.split('_')[0].split('/')[0]))
                  if numeric_part:
                      return float(numeric_part)
@@ -126,18 +119,19 @@ class MaterialNormalizer:
 
     # Regex patterns mapping to internal types
     PATTERNS = [
-        # --- Explicit Unknowns (Sanitization Sprint 3.5) ---
-        (r'(odefinierad|okänt|unknown)', 'Unknown'),
+        # --- Explicit Unknowns ---
+        (r'(odefinierad|okänt|unknown|övrigt)', 'Övrigt'),
 
         # --- Plastics ---
         (r'(pvc|p\.v\.c|polyvinyl)', 'PVC'),
         (r'(pe|polyeten|pem|pel|peh|ultra|pragma|flexoren)', 'PE'),
-        (r'(plast|pp|propen)', 'Plast'), # Generic plastic fallback
+        (r'(plast|pp|propen)', 'Plast'),
 
         # --- Iron/Metal ---
         (r'(grå|gjj)', 'Gråjärn'),
         (r'(seg|sjj)', 'Segjärn'),
-        (r'(järn)', 'Järn'), # Generic iron fallback
+        (r'(gjut)', 'Gjutjärn'),
+        (r'(järn)', 'Gjutjärn'), # Default generic iron to Cast Iron if not specific
         (r'(stål|sta|gal)', 'Stål'),
 
         # --- Concrete/Cement ---
@@ -145,16 +139,17 @@ class MaterialNormalizer:
         (r'(asb|eternit)', 'Asbestcement'),
 
         # --- Clay/Ceramic ---
-        (r'(ler|höganäs|tegel)', 'Lergods'),
+        (r'(ler|höganäs|tegel)', 'Tegel'), # Map Lergods/Tegel to "Tegel" for Spillvatten, or generic
     ]
 
     @staticmethod
-    def normalize(material, year, layer_type):
+    def normalize(material, layer_type):
         """
-        Determines the canonical parameter key based on material string, year, and layer type.
+        Determines the canonical parameter key based on material string and layer type.
+        Now maps to clean keys like 'Betong', 'Plast', etc.
         """
         if not material or not isinstance(material, str):
-            return MaterialNormalizer._default_unknown(layer_type)
+            return 'Övrigt'
 
         mat_lower = material.lower().strip()
 
@@ -165,60 +160,35 @@ class MaterialNormalizer:
                 identified_type = mat_type
                 break
 
-        if not identified_type or identified_type == 'Unknown':
-            return MaterialNormalizer._default_unknown(layer_type)
+        if not identified_type:
+            return 'Övrigt'
 
-        # 2. Map to Specific Parameter Key (Time/Type Logic)
+        # 2. Map to Specific Key available in JSON for that layer type
 
-        # --- Vatten Logic ---
+        # --- Vatten ---
         if layer_type == 'Vatten':
-            if identified_type == 'PVC':
-                return 'PVC <1970' if year < 1970 else 'PVC >=1970'
-            if identified_type == 'PE' or identified_type == 'Plast':
-                return 'PE'
-            if identified_type == 'Gråjärn':
-                return 'Gråjärn <1950' if year < 1950 else 'Gråjärn >=1950'
-            if identified_type == 'Segjärn':
-                return 'Segjärn <1980' if year < 1980 else 'Segjärn >=1980'
-            if identified_type == 'Järn':
-                return 'Gråjärn >=1950' # Default assumption
-            if identified_type == 'Betong':
-                return 'Övrigt/okänt'
-            if identified_type == 'Stål':
-                return 'Stål'
-            if identified_type == 'Asbestcement':
-                return 'Asbestcement'
+            if identified_type in ['Gråjärn', 'Segjärn', 'PVC', 'PE', 'Stål', 'Asbestcement', 'Övrigt']:
+                return identified_type
+            if identified_type == 'Plast': return 'PE' # Default Vatten plastic
+            if identified_type == 'Gjutjärn': return 'Gråjärn'
+            # Vatten usually doesn't use Concrete/Tegel in this model, map to Övrigt?
+            return 'Övrigt'
 
-            return 'Övrigt/okänt'
-
-        # --- Avlopp Logic (Spillvatten/Dagvatten) ---
-        elif layer_type in ['Spillvatten', 'Dagvatten']:
-            prefix = 'S-' if layer_type == 'Spillvatten' else 'D-'
-
-            if identified_type in ['Plast', 'PVC', 'PE']:
-                return f'{prefix}Plast'
-
-            if identified_type == 'Betong':
-                if layer_type == 'Spillvatten':
-                    if year < 1950: return 'S-Betong <1950'
-                    if 1950 <= year < 1970: return 'S-Betong 1950-69'
-                    return 'S-Betong >=1970'
-                else: # Dagvatten
-                    return 'D-Betong <1950' if year < 1950 else 'D-Betong >=1950'
-
-            if identified_type == 'Lergods':
-                return f'{prefix}Lergods'
-
-            return f'{prefix}Övrigt/okänt'
-
-        return MaterialNormalizer._default_unknown(layer_type)
-
-    @staticmethod
-    def _default_unknown(layer_type):
-        if layer_type == 'Vatten':
-            return 'Övrigt/okänt'
+        # --- Spillvatten ---
         elif layer_type == 'Spillvatten':
-            return 'S-Övrigt/okänt'
+            if identified_type in ['Betong', 'Plast', 'Gjutjärn', 'Tegel', 'Övrigt']:
+                return identified_type
+            if identified_type in ['PVC', 'PE']: return 'Plast'
+            if identified_type in ['Gråjärn', 'Segjärn']: return 'Gjutjärn'
+            if identified_type == 'Asbestcement': return 'Övrigt' # Or map to Betong? Stick to Övrigt.
+            return 'Övrigt'
+
+        # --- Dagvatten ---
         elif layer_type == 'Dagvatten':
-            return 'D-Övrigt/okänt'
-        return 'Övrigt/okänt'
+            if identified_type in ['Betong', 'Plast', 'Övrigt']:
+                return identified_type
+            if identified_type in ['PVC', 'PE']: return 'Plast'
+            # Dagvatten usually doesn't use Iron/Tegel in this model
+            return 'Övrigt'
+
+        return 'Övrigt'

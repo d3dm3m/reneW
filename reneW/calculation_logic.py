@@ -19,18 +19,22 @@ def calculate_renewal_need(
     Calculates the renewal need for a pipe based on its type, material, and age,
     using the Herz survival model, and optionally applies a dimension-based weighting.
     """
-    # Map the UI layer type ('Vatten', 'Spillvatten', 'Dagvatten') to the
-    # parameter dictionary keys ('Vatten', 'Avlopp')
-    calc_pipeline_type = 'Avlopp' if pipeline_type in ['Spillvatten', 'Dagvatten'] else 'Vatten'
-
     # Use the robust normalizer to get the key
-    param_key = MaterialNormalizer.normalize(material, year, pipeline_type)
+    # Note: 'pipeline_type' passed here is now strictly 'Vatten', 'Spillvatten', 'Dagvatten'
+    # The logic relies on ParameterLoader returning the correct dict for this type.
 
-    # Load parameters via the loader
-    parameters = ParameterLoader.get_parameters(calc_pipeline_type)
+    # Normalize material to get the key (e.g. "Betong")
+    param_key = MaterialNormalizer.normalize(material, pipeline_type)
+
+    # Load parameters via the loader for the specific system type
+    parameters = ParameterLoader.get_parameters(pipeline_type)
 
     if not param_key or param_key not in parameters:
-        return 0.0
+        # Fallback to Övrigt if key missing but valid system
+        if 'Övrigt' in parameters:
+            param_key = 'Övrigt'
+        else:
+            return 0.0
 
     params = parameters[param_key]
     a = params['a']
