@@ -381,7 +381,7 @@ class ReneW:
         # Glow layers (multiple blurred layers)
         # The blur radius and color can be adjusted for different visual effects
         for blur_radius, opacity, color in [(12, 20, '255,50,50'), (8, 40, '255,0,0'), (4, 70, '200,0,0')]:
-            glow_fill = QgsSimpleFill.create({'color': f'{color},{opacity}', 'style': 'solid'})
+            glow_fill = QgsSimpleFillSymbolLayer.create({'color': f'{color},{opacity}', 'style': 'solid'})
 
             blur_effect = QgsBlurEffect()
             blur_effect.setBlurRadius(blur_radius)
