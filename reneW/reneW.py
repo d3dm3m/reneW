@@ -5,7 +5,9 @@ from qgis.PyQt.QtWidgets import QAction, QProgressDialog
 from qgis.PyQt.QtGui import QIcon, QColor
 from qgis.PyQt.QtCore import QVariant, Qt
 from qgis.core import (QgsProject, QgsVectorLayer, QgsField, QgsGeometry,
-                     QgsFeature, QgsFillSymbol, QgsSimpleFill)
+                     QgsFeature, QgsFillSymbol, QgsSimpleFill,
+                     QgsGraduatedSymbolRenderer, QgsSymbol, QgsRendererRange,
+                     QgsStyle, QgsSimpleLineSymbol)
 from qgis.gui import QgsBlurEffect
 
 # Import the code for the dialog and the calculation logic
@@ -17,12 +19,7 @@ class ReneW:
     """QGIS Plugin Implementation."""
 
     def __init__(self, iface):
-        """Constructor.
-        :param iface: An interface instance that will be passed to this class
-            which provides the hook by which you can manipulate the QGIS
-            application at run time.
-        :type iface: QgsInterface
-        """
+        """Constructor."""
         self.iface = iface
         self.plugin_dir = os.path.dirname(__file__)
         self.actions = []
@@ -122,16 +119,16 @@ class ReneW:
                 if progress_dialog.wasCanceled():
                     break
 
-                layer_name = config['layer'].name()
+                layer = config['layer']
+                layer_name = layer.name()
                 progress_dialog.setLabelText(f"Analyserar {layer_name}...")
 
                 def update_progress(percent):
-                    # Map 0-100 percent for this layer to the global progress
                     current_base = i * 100
                     progress_dialog.setValue(current_base + percent)
 
                 result = self.risk_manager.execute_analysis(
-                    layer=config['layer'],
+                    layer=layer,
                     config=config,
                     use_dimension_weighting=use_dimension_weighting,
                     dimension_factor=dimension_factor,
@@ -142,8 +139,12 @@ class ReneW:
                     self.iface.messageBar().pushMessage("Success", result['message'], level=0, duration=4)
                     processed_layers += 1
                     all_high_risk_results.extend(result['high_risk_results'])
+
+                    # Apply auto-styling to highlight risk
+                    self._apply_risk_styling(layer)
+
                 else:
-                    level = 1 if "Error" in result['message'] else 1 # Use Warning/Error level
+                    level = 1 if "Error" in result['message'] else 1
                     self.iface.messageBar().pushMessage("Error", result['message'], level=level)
 
             progress_dialog.close()
@@ -157,7 +158,6 @@ class ReneW:
             if self.dlg.isHotspotAnalysisEnabled() and analysis_configs:
                 hotspot_threshold = self.dlg.getHotspotThreshold()
                 hotspot_distance = self.dlg.getHotspotDistance()
-
                 hotspot_geom = self._run_hotspot_analysis(analysis_configs, hotspot_threshold, hotspot_distance)
 
                 if hotspot_geom:
@@ -165,19 +165,139 @@ class ReneW:
                         hotspot_count = len(hotspot_geom.asMultiPolygon())
                     else:
                         hotspot_count = 1
-                    # Use the CRS of the first analyzed layer for the new hotspot layer
                     first_layer_crs = analysis_configs[0]['layer'].crs()
                     self._create_hotspot_layer(hotspot_geom, first_layer_crs)
 
+            # --- Generate Project Bundles ---
+            # Spatial clustering of high-risk items
+            if all_high_risk_results:
+                self._generate_project_bundles(all_high_risk_results, analysis_configs[0]['layer'].crs())
+
             # --- Show results dialog if there are high-risk items ---
             if all_high_risk_results:
-                # Sort results by renewal need, descending
-                all_high_risk_results.sort(key=lambda x: x['renewal_need'], reverse=True)
+                # Sort by Risk Cost (descending) by default
+                all_high_risk_results.sort(key=lambda x: x.get('risk_cost', 0.0), reverse=True)
 
                 self.results_dialog = ResultsDialog(parent=self.iface.mainWindow(), hotspot_count=hotspot_count)
                 self.results_dialog.zoom_to_feature_signal.connect(self._handle_zoom_to_feature)
                 self.results_dialog.populate_table(all_high_risk_results)
                 self.results_dialog.show()
+
+    def _apply_risk_styling(self, layer):
+        """Applies a graduated renderer to the layer based on RISK_COST."""
+        target_field = 'RISK_COST'
+        if layer.fields().indexFromName(target_field) == -1:
+            return
+
+        # Simplified approach using default style or just modifying current
+        # Creating a ramp 'Reds'
+        ramp = QgsStyle.defaultStyle().colorRamp('Reds')
+        if not ramp:
+             # Fallback if 'Reds' isn't found in default style (rare)
+             ramp = QgsStyle.defaultStyle().colorRamp('Spectral')
+             if ramp: ramp.invert()
+
+        # Create the renderer
+        renderer = QgsGraduatedSymbolRenderer.createRenderer(
+            layer,
+            target_field,
+            5,
+            QgsGraduatedSymbolRenderer.Jenks,
+            QgsSymbol.defaultSymbol(layer.geometryType()),
+            ramp
+        )
+
+        if renderer:
+            layer.setRenderer(renderer)
+            layer.triggerRepaint()
+
+    def _generate_project_bundles(self, high_risk_results, crs, score_threshold=2.0):
+        """
+        Clusters high risk features into 'Project Bundles'.
+
+        :param high_risk_results: List of dicts containing result data.
+        :param crs: QgsCoordinateReferenceSystem for the output layer.
+        :param score_threshold: Minimum RISK_SCORE (PoF * CoF) to consider for bundling.
+                                Default 2.0 (Low probability but High consequence, or High prob Medium cons).
+        """
+        if not high_risk_results:
+            return
+
+        # 1. Collect Geometries
+        geoms = []
+
+        for item in high_risk_results:
+            # Filter strictly by RISK_SCORE for strategic bundling
+            if item.get('risk_score', 0.0) < score_threshold:
+                continue
+
+            layer = QgsProject.instance().mapLayer(item['layer_id'])
+            if layer:
+                f = layer.getFeature(item['feature_id'])
+                if f.hasGeometry():
+                    geoms.append(f.geometry())
+
+        if not geoms:
+            # If filtering removed everything, stop.
+            return
+
+        # 2. Buffer & Dissolve
+        buffers = [g.buffer(20, 5) for g in geoms]
+        combined = QgsGeometry.unaryUnion(buffers)
+
+        if combined.isEmpty():
+            return
+
+        project_polygons = []
+        if combined.isMultipart():
+            project_polygons = combined.asMultiPolygon()
+        else:
+            project_polygons = [combined.asPolygon()]
+
+        # 3. Create Memory Layer
+        vl = QgsVectorLayer(f"Polygon?crs={crs.authid()}", "Föreslagna Projekt", "memory")
+        pr = vl.dataProvider()
+        pr.addAttributes([
+            QgsField("TOTAL_RISK", QVariant.Double),
+            QgsField("Project_ID", QVariant.Int)
+        ])
+        vl.updateFields()
+
+        new_features = []
+        for i, poly_pts in enumerate(project_polygons):
+            # Create geometry from polygon points
+            poly_geom = QgsGeometry.fromPolygonXY(poly_pts)
+
+            # Calculate Total Risk for this bundle
+            bundle_risk = 0.0
+
+            # Re-iterate ALL high risk items to sum cost (even if score < threshold)
+            # If they fall inside the "Project Zone", they should be fixed too (economies of scale).
+            for item in high_risk_results:
+                 layer = QgsProject.instance().mapLayer(item['layer_id'])
+                 if layer:
+                     f = layer.getFeature(item['feature_id'])
+                     if f.hasGeometry() and f.geometry().intersects(poly_geom):
+                         bundle_risk += item.get('risk_cost', 0.0)
+
+            feat = QgsFeature()
+            feat.setGeometry(poly_geom)
+            feat.setAttributes([bundle_risk, i + 1])
+            new_features.append(feat)
+
+        pr.addFeatures(new_features)
+
+        # 4. Style the Project Layer
+        symbol = QgsFillSymbol.createSimple({
+            'color': '0,0,255,0', # Transparent fill
+            'outline_color': '0,0,255,255', # Blue outline
+            'outline_width': '1.0',
+            'style': 'no'
+        })
+        vl.renderer().setSymbol(symbol)
+
+        QgsProject.instance().addMapLayer(vl)
+        self.iface.messageBar().pushMessage("Info", f"Skapade {len(new_features)} projektförslag baserat på riskkluster (Tröskelvärde > {score_threshold}).", level=0, duration=5)
 
     def _run_hotspot_analysis(self, analysis_configs, threshold, distance):
         self.iface.messageBar().pushMessage("Info", "Startar hotspot-analys...", level=0, duration=3)
