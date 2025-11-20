@@ -3,6 +3,8 @@ from datetime import datetime
 from qgis.core import QgsField
 from qgis.PyQt.QtCore import QVariant
 from . import calculation_logic
+from .utils import ParameterLoader
+from .strategic_models import ConsequenceCalculator, EconomicModel
 
 class RiskManager:
     """
@@ -11,7 +13,9 @@ class RiskManager:
 
     def __init__(self):
         """Constructor."""
-        pass
+        self.consequence_calc = ConsequenceCalculator()
+        self.economic_model = EconomicModel()
+        self.unit_costs = ParameterLoader.get_unit_costs()
 
     def execute_analysis(self, layer, config, use_dimension_weighting, dimension_factor, progress_callback=None):
         """
@@ -26,22 +30,38 @@ class RiskManager:
         """
 
         layer_type = config['type']
+
+        # Determine unit cost for this layer type
+        unit_cost = self.unit_costs.get(layer_type, 0.0)
+
         output_field_name = 'fornyelsebehov'
+        risk_score_field = 'RISK_SCORE'
+        risk_cost_field = 'RISK_COST'
+
         provider = layer.dataProvider()
         fields = provider.fields()
 
-        # Ensure output field exists
+        # Ensure output fields exist
+        new_fields = []
         if fields.indexFromName(output_field_name) == -1:
-            provider.addAttributes([QgsField(output_field_name, QVariant.Double)])
+            new_fields.append(QgsField(output_field_name, QVariant.Double))
+        if fields.indexFromName(risk_score_field) == -1:
+            new_fields.append(QgsField(risk_score_field, QVariant.Double))
+        if fields.indexFromName(risk_cost_field) == -1:
+            new_fields.append(QgsField(risk_cost_field, QVariant.Double))
+
+        if new_fields:
+            provider.addAttributes(new_fields)
             layer.updateFields()
-            # Refresh fields after update
-            fields = layer.fields()
+            fields = layer.fields() # Refresh
 
         # Get field indices
         material_idx = fields.indexFromName(config['material_field'])
         year_idx = fields.indexFromName(config['year_field'])
         dimension_idx = fields.indexFromName(config['dimension_field'])
         output_idx = fields.indexFromName(output_field_name)
+        risk_score_idx = fields.indexFromName(risk_score_field)
+        risk_cost_idx = fields.indexFromName(risk_cost_field)
 
         # Validation
         if any(idx == -1 for idx in [material_idx, year_idx, dimension_idx]):
@@ -55,7 +75,6 @@ class RiskManager:
         current_year = datetime.now().year
         high_risk_results = []
 
-        # Progress setup
         feature_count = layer.featureCount()
         processed_count = 0
 
@@ -65,7 +84,6 @@ class RiskManager:
             for i, feature in enumerate(layer.getFeatures()):
                 # Progress update
                 if progress_callback and feature_count > 0:
-                    # Update every 1% or every 100 features to avoid overhead
                     if i % max(1, int(feature_count / 100)) == 0:
                         percent = int((i / feature_count) * 100)
                         progress_callback(percent)
@@ -78,10 +96,9 @@ class RiskManager:
                 except (ValueError, TypeError, AttributeError):
                     installation_year = current_year
 
-                # Default age
                 age = max(0, current_year - installation_year)
 
-                # Handle Renovation Logic
+                # Renovation Logic
                 if config.get('reno_method_field') and config.get('reno_year_field'):
                     reno_method_idx = fields.indexFromName(config['reno_method_field'])
                     reno_year_idx = fields.indexFromName(config['reno_year_field'])
@@ -96,7 +113,7 @@ class RiskManager:
                                 except (ValueError, TypeError, AttributeError):
                                     pass
 
-                # Handle Dimension Logic
+                # Dimension Logic
                 dimension_val = attrs[dimension_idx]
                 dimension = 0.0
                 if isinstance(dimension_val, (int, float)):
@@ -109,7 +126,7 @@ class RiskManager:
                     except (ValueError, TypeError):
                         dimension = 0.0
 
-                # Calculate
+                # 1. PoF Calculation
                 renewal_need = calculation_logic.calculate_renewal_need(
                     pipeline_type=layer_type,
                     material=material,
@@ -120,9 +137,31 @@ class RiskManager:
                     dimension_factor=dimension_factor
                 )
 
-                layer.changeAttributeValue(feature.id(), output_idx, renewal_need)
+                # 2. CoF Calculation
+                cof_score = self.consequence_calc.calculate_score(feature, dimension)
 
-                # Collect High Risk
+                # 3. Risk Cost Calculation
+                # Calculate length (if geometry exists)
+                length = 0.0
+                if feature.hasGeometry():
+                    length = feature.geometry().length()
+
+                risk_cost = self.economic_model.calculate_risk_cost(
+                    pof=renewal_need,
+                    consequence_score=cof_score,
+                    length=length,
+                    unit_cost=unit_cost
+                )
+
+                # 4. Combined Risk Score
+                risk_score = renewal_need * cof_score
+
+                # Update Attributes
+                layer.changeAttributeValue(feature.id(), output_idx, renewal_need)
+                layer.changeAttributeValue(feature.id(), risk_score_idx, risk_score)
+                layer.changeAttributeValue(feature.id(), risk_cost_idx, risk_cost)
+
+                # Collect High Risk (Legacy support, could use risk_score here too)
                 if renewal_need >= 0.5:
                     high_risk_results.append({
                         'layer_name': layer.name(),
@@ -130,13 +169,15 @@ class RiskManager:
                         'feature_id': feature.id(),
                         'material': material,
                         'age': age,
-                        'renewal_need': renewal_need
+                        'renewal_need': renewal_need,
+                        'risk_score': risk_score,
+                        'risk_cost': risk_cost
                     })
 
             if layer.commitChanges():
                 processed_count = layer.featureCount()
                 if progress_callback:
-                    progress_callback(100) # Ensure complete
+                    progress_callback(100)
                 return {
                     'status': True,
                     'count': processed_count,

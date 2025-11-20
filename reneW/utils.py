@@ -20,10 +20,6 @@ class ParameterLoader:
                 with open(file_path, 'r', encoding='utf-8') as f:
                     cls._parameters = json.load(f)
             except (FileNotFoundError, json.JSONDecodeError) as e:
-                # Fallback or re-raise depending on desired robustness.
-                # For now, log error and return empty dict or raise.
-                # Since the plugin logic depends on it, better to log/print and have an empty dict fallback
-                # so it doesn't crash immediately on import, but calculations will fail gracefully (return 0).
                 print(f"Error loading parameters.json: {e}")
                 cls._parameters = {}
         return cls._parameters
@@ -35,6 +31,14 @@ class ParameterLoader:
         """
         params = cls.load_parameters()
         return params.get(pipeline_type, {})
+
+    @classmethod
+    def get_unit_costs(cls):
+        """
+        Returns the unit costs dictionary.
+        """
+        params = cls.load_parameters()
+        return params.get('unit_costs', {})
 
 class MaterialNormalizer:
     """
@@ -99,7 +103,7 @@ class MaterialNormalizer:
             if identified_type == 'Järn':
                 return 'Gråjärn >=1950' # Default assumption
             if identified_type == 'Betong':
-                return 'Övrigt/okänt' # Vatten mostly doesn't use concrete pipes in this model context, or mapped to unknown
+                return 'Övrigt/okänt'
             if identified_type == 'Stål':
                 return 'Stål'
             if identified_type == 'Asbestcement':
@@ -124,9 +128,6 @@ class MaterialNormalizer:
 
             if identified_type == 'Lergods':
                 return f'{prefix}Lergods'
-
-            # If we found a type like "Järn" or "Stål" for Sewer, we currently don't have specific params
-            # in the JSON provided for them, so they fall to default/unknown.
 
             return f'{prefix}Övrigt/okänt'
 
