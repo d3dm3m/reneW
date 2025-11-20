@@ -28,5 +28,14 @@
         "Vatten": 2500,
         "Spillvatten": 3000,
         "Dagvatten": 2000
+    },
+    "defaults": {
+        "unknown_year_substitute": 1980,
+        "unknown_dimension_substitute": 150,
+        "null_markers": {
+            "year": [1900, 0, "0"],
+            "material": ["odefinierad", "okänt", "unknown"],
+            "dimension": ["-", "--", "0", 0]
+        }
     }
 }

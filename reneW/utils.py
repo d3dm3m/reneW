@@ -40,6 +40,84 @@ class ParameterLoader:
         params = cls.load_parameters()
         return params.get('unit_costs', {})
 
+    @classmethod
+    def get_defaults(cls):
+        """
+        Returns the defaults configuration dictionary.
+        """
+        params = cls.load_parameters()
+        return params.get('defaults', {})
+
+class DataSanitizer:
+    """
+    Sanitizes input data by handling null markers and substituting default values.
+    """
+
+    @staticmethod
+    def sanitize_year(raw_year):
+        """
+        Sanitizes the installation year.
+        Checks for null markers (1900, 0) and returns substitute (1980) if found.
+        """
+        defaults = ParameterLoader.get_defaults()
+        substitute = defaults.get("unknown_year_substitute", 1980)
+        null_markers = defaults.get("null_markers", {}).get("year", [])
+
+        # Convert input to check against markers
+        val_to_check = raw_year
+
+        # Check if it's a marker
+        if val_to_check in null_markers:
+            return substitute
+
+        # Also check string representation if raw_year is int/float
+        if str(val_to_check) in [str(m) for m in null_markers]:
+             return substitute
+
+        try:
+            year = int(raw_year)
+            if year in null_markers:
+                return substitute
+            return year
+        except (ValueError, TypeError, AttributeError):
+            return substitute
+
+    @staticmethod
+    def sanitize_dimension(raw_dim):
+        """
+        Sanitizes the dimension.
+        Handles null markers ("-", "--") and parsing of complex strings ("225_I").
+        Returns float or substitute (150).
+        """
+        defaults = ParameterLoader.get_defaults()
+        substitute = defaults.get("unknown_dimension_substitute", 150.0)
+        null_markers = defaults.get("null_markers", {}).get("dimension", [])
+
+        if raw_dim in null_markers:
+            return float(substitute)
+
+        if str(raw_dim) in [str(m) for m in null_markers]:
+            return float(substitute)
+
+        if raw_dim is None:
+            return float(substitute)
+
+        # Attempt parse
+        try:
+            if isinstance(raw_dim, (int, float)):
+                return float(raw_dim)
+            elif isinstance(raw_dim, str):
+                 # Clean string logic moved from risk_manager
+                 # Extract numeric part before any non-numeric characters (except dot)
+                 # e.g. "225_I" -> 225
+                 numeric_part = ''.join(filter(lambda c: c.isdigit() or c == '.', raw_dim.split('_')[0].split('/')[0]))
+                 if numeric_part:
+                     return float(numeric_part)
+        except (ValueError, TypeError):
+            pass
+
+        return float(substitute)
+
 class MaterialNormalizer:
     """
     Normalizes material names using regex patterns to map messy inputs
@@ -47,8 +125,10 @@ class MaterialNormalizer:
     """
 
     # Regex patterns mapping to internal types
-    # Order matters: put specific patterns before generic ones
     PATTERNS = [
+        # --- Explicit Unknowns (Sanitization Sprint 3.5) ---
+        (r'(odefinierad|okänt|unknown)', 'Unknown'),
+
         # --- Plastics ---
         (r'(pvc|p\.v\.c|polyvinyl)', 'PVC'),
         (r'(pe|polyeten|pem|pel|peh|ultra|pragma|flexoren)', 'PE'),
@@ -85,7 +165,7 @@ class MaterialNormalizer:
                 identified_type = mat_type
                 break
 
-        if not identified_type:
+        if not identified_type or identified_type == 'Unknown':
             return MaterialNormalizer._default_unknown(layer_type)
 
         # 2. Map to Specific Parameter Key (Time/Type Logic)

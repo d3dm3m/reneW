@@ -3,7 +3,7 @@ from datetime import datetime
 from qgis.core import QgsField
 from qgis.PyQt.QtCore import QVariant
 from . import calculation_logic
-from .utils import ParameterLoader
+from .utils import ParameterLoader, DataSanitizer
 from .strategic_models import ConsequenceCalculator, EconomicModel
 
 class RiskManager:
@@ -89,16 +89,20 @@ class RiskManager:
                         progress_callback(percent)
 
                 attrs = feature.attributes()
-                material = attrs[material_idx]
 
-                try:
-                    installation_year = int(attrs[year_idx])
-                except (ValueError, TypeError, AttributeError):
-                    installation_year = current_year
+                # --- DATA SANITIZATION SPRINT 3.5 ---
+
+                # 1. Material
+                material = attrs[material_idx]
+                # MaterialNormalizer handles logic later, but we pass raw string.
+
+                # 2. Year (Sanitized)
+                raw_year = attrs[year_idx]
+                installation_year = DataSanitizer.sanitize_year(raw_year)
 
                 age = max(0, current_year - installation_year)
 
-                # Renovation Logic
+                # Renovation Logic (Optional override)
                 if config.get('reno_method_field') and config.get('reno_year_field'):
                     reno_method_idx = fields.indexFromName(config['reno_method_field'])
                     reno_year_idx = fields.indexFromName(config['reno_year_field'])
@@ -107,24 +111,16 @@ class RiskManager:
                         reno_method = attrs[reno_method_idx]
                         if reno_method and isinstance(reno_method, str):
                             if 'infodring' in reno_method.lower() or 'strumpa' in reno_method.lower():
-                                try:
-                                    reno_year = int(attrs[reno_year_idx])
-                                    age = max(0, current_year - reno_year)
-                                except (ValueError, TypeError, AttributeError):
-                                    pass
+                                # Also sanitize renovation year if found
+                                raw_reno_year = attrs[reno_year_idx]
+                                reno_year = DataSanitizer.sanitize_year(raw_reno_year)
+                                age = max(0, current_year - reno_year)
 
-                # Dimension Logic
-                dimension_val = attrs[dimension_idx]
-                dimension = 0.0
-                if isinstance(dimension_val, (int, float)):
-                    dimension = float(dimension_val)
-                elif isinstance(dimension_val, str):
-                    try:
-                        numeric_part = ''.join(filter(lambda c: c.isdigit() or c == '.', dimension_val.split('_')[0].split('/')[0]))
-                        if numeric_part:
-                            dimension = float(numeric_part)
-                    except (ValueError, TypeError):
-                        dimension = 0.0
+                # 3. Dimension (Sanitized)
+                raw_dimension = attrs[dimension_idx]
+                dimension = DataSanitizer.sanitize_dimension(raw_dimension)
+
+                # --- END SANITIZATION ---
 
                 # 1. PoF Calculation
                 renewal_need = calculation_logic.calculate_renewal_need(
@@ -141,7 +137,6 @@ class RiskManager:
                 cof_score = self.consequence_calc.calculate_score(feature, dimension)
 
                 # 3. Risk Cost Calculation
-                # Calculate length (if geometry exists)
                 length = 0.0
                 if feature.hasGeometry():
                     length = feature.geometry().length()
@@ -161,7 +156,7 @@ class RiskManager:
                 layer.changeAttributeValue(feature.id(), risk_score_idx, risk_score)
                 layer.changeAttributeValue(feature.id(), risk_cost_idx, risk_cost)
 
-                # Collect High Risk (Legacy support, could use risk_score here too)
+                # Collect High Risk
                 if renewal_need >= 0.5:
                     high_risk_results.append({
                         'layer_name': layer.name(),
