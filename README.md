@@ -1,81 +1,88 @@
-# reneW - QGIS Plugin for Pipeline Renewal Planning
+# reneW - Risk-Based Asset Management for QGIS
 
-`reneW` is a QGIS plugin designed to help in the planning of utility pipe renewals. It calculates a renewal need score for each pipe based on a survival analysis model, providing a quantitative basis for maintenance and renewal decisions.
+**reneW** is a powerful QGIS plugin designed for strategic renewal planning of water and wastewater infrastructure. It transforms raw asset data into actionable financial risk intelligence.
 
-## Features
+Unlike simple age-based tools, reneW implements a complete **Risk-Based Asset Management (RBAM)** workflow. It calculates the Probability of Failure (PoF) using advanced survival models, estimates the Consequence of Failure (CoF), and quantifies the **Monetary Risk (SEK)** for every pipe in your network.
 
-*   Calculates a **renewal need** score (from 0.0 to 1.0+) for each pipe.
-*   Uses a **Herz survival model** based on pipe type (water/sewage), material, and age.
-*   Includes an **optional and adjustable weighting factor** for pipe dimension to account for consequence of failure.
-*   User-friendly dialog to select the layer and map the necessary attributes.
-*   Adds the calculated score to a new field (`fornyelsebehov`) in your data.
+![reneW Screenshot](icon.png)
+
+## Key Features
+
+*   **Advanced Risk Modeling:** Combines Herz survival functions with consequence logic.
+*   **Financial Quantification:** Estimates the "Expected Annual Cost of Risk" in currency (SEK).
+*   **Strategic Visualization:** Automatically highlights high-cost liabilities with intuitive color ramps.
+*   **Project Bundling:** Spatially clusters high-risk assets into actionable "Project Zones" to identify neighborhoods ripe for renovation.
+*   **Data Resilience:** Built-in sanitization handles messy GIS data (e.g., "1900" dates, typo-ridden materials) without crashing.
+
+## How It Works
+
+reneW performs a sophisticated 4-step analysis on your Water (Vatten), Wastewater (Spillvatten), and Stormwater (Dagvatten) layers.
+
+### Step 1: Data Sanitization
+Real-world data is rarely perfect. reneW automatically cleans your inputs before analysis:
+*   **Years:** Markers like `1900`, `0`, or `None` are replaced with a configurable default (e.g., `1980`).
+*   **Dimensions:** Values like `-` or `--` are safely handled. Complex strings like `225_I` are parsed to extraction the numeric diameter.
+*   **Materials:** Typo-tolerant matching maps inputs like `P.V.C`, `Btg`, or `odefinierad` to standard calculation parameters.
+
+### Step 2: Probability of Failure (PoF)
+The plugin uses the **Herz Survival Function** model to calculate the likelihood of failure (0.0 - 1.0).
+*   Parameters (`a`, `b`, `c`) are calibrated for specific material/age cohorts (e.g., "Concrete pipes from 1950-69").
+*   *Renovation Awareness:* If a pipe has been relined ("Strumpa"/"Infordring"), its effective age is reset based on the renovation year.
+
+### Step 3: Consequence & Financial Risk
+Risk is more than just probability. reneW calculates the consequences:
+*   **Consequence Score (1-5):** Larger pipes (e.g., >400mm) are assigned higher consequence scores due to the greater impact of failure.
+*   **Monetary Risk Calculation:**
+    ```
+    Risk Cost = PoF × Consequence Score × Length × Unit Cost
+    ```
+    This formula highlights pipes that are not just old, but *expensive* liabilities.
+
+### Step 4: Strategic Planning & Bundling
+Finally, the tool translates row-level data into strategic insights:
+*   **Auto-Styling:** The map is styled with a "Reds" color ramp based on `RISK_COST`, instantly revealing where the money is at risk.
+*   **Project Bundling:** High-risk pipes are spatially buffered (20m) and clustered into "Project Zones". These polygons represent suggested work areas, complete with a summed `TOTAL_RISK` cost, helping planners scope projects effectively.
+
+## Configuration
+
+All calculation parameters are stored in `reneW/parameters.json`. You can customize this file to match your municipality's specific costs and data environment.
+
+### Updating Unit Costs
+To change the estimated replacement cost per meter (Currency/m), edit the `unit_costs` section:
+
+```json
+"unit_costs": {
+    "Vatten": 2500,
+    "Spillvatten": 3000,
+    "Dagvatten": 2000
+}
+```
+
+### Configuring Data Defaults
+To change how the sanitizer handles missing data, edit the `defaults` section:
+
+```json
+"defaults": {
+    "unknown_year_substitute": 1980,
+    "unknown_dimension_substitute": 150,
+    "null_markers": {
+        "year": [1900, 0, "0"],
+        "dimension": ["-", "--", "0"]
+    }
+}
+```
+
+### Calibrating Herz Parameters
+The survival model parameters (`a`, `b`, `c`) for each material cohort can be fine-tuned in the `Avlopp` and `Vatten` sections of the JSON file.
 
 ## Installation
 
-To install the `reneW` plugin in QGIS, follow these steps:
+1.  Copy the `reneW` folder into your QGIS plugins directory:
+    *   **Windows:** `C:\Users\%USERNAME%\AppData\Roaming\QGIS\QGIS3\profiles\default\python\plugins\`
+    *   **Mac/Linux:** `~/.local/share/QGIS/QGIS3/profiles/default/python/plugins/`
+2.  Restart QGIS.
+3.  Enable "reneW" in the **Plugins > Manage and Install Plugins** menu.
 
-1.  **Download the Plugin:**
-    If you have the plugin as a folder (e.g., named `reneW`), you can proceed to the next step. This folder should contain all the plugin files (`__init__.py`, `reneW.py`, etc.).
+## License
 
-2.  **Find your QGIS Plugins Directory:**
-    Open QGIS. Go to the `Settings` menu -> `User Profiles` -> `Open Active Profile Folder`. This will open a file explorer window. Inside this folder, navigate to `python/plugins`.
-
-    The full path is typically something like:
-    *   **Windows:** `C:\\Users\\<YourUsername>\\AppData\\Roaming\\QGIS\\QGIS3\\profiles\\default\\python\\plugins`
-    *   **macOS:** `~/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins`
-    *   **Linux:** `~/.local/share/QGIS/QGIS3/profiles/default/python/plugins`
-
-3.  **Copy Plugin Directory:**
-    Copy the entire `reneW` directory into the `plugins` directory you located in the previous step.
-
-4.  **Activate the Plugin in QGIS:**
-    *   Restart QGIS.
-    *   Go to the `Plugins` menu -> `Manage and Install Plugins...`.
-    *   In the `Installed` tab, you should see "reneW". Make sure the checkbox next to it is ticked to enable it.
-
-You should now see the `reneW` icon in the QGIS toolbar.
-
-## Usage
-
-1.  **Open Your Project:**
-    Start QGIS and load the vector layer containing your pipeline data. Make sure this layer has attributes for installation year, material, and dimension.
-
-2.  **Launch the Plugin:**
-    Click on the `reneW` icon in the toolbar or go to the `Plugins` menu -> `reneW` -> `Run reneW`.
-
-3.  **Configure the Calculation:**
-    The `reneW - Riskkalkylering` dialog will appear.
-    *   **Välj ledningslager:** Select your pipeline layer.
-    *   **Välj ledningstyp:** Select 'Vatten' (Water) or 'Avlopp' (Sewage/Stormwater).
-    *   **Fält för material:** Choose the field with the material information.
-    *   **Fält för årtal:** Choose the field with the installation year.
-    *   **Fält för dimension:** Choose the field with the dimension information.
-    *   **Använd dimensionsviktning:** Check this box to apply a consequence weighting based on dimension.
-    *   **Faktor:** If weighting is enabled, adjust this factor to control the influence of the dimension. A higher factor gives dimension a greater impact.
-
-4.  **Run the Calculation:**
-    Click the `OK` button.
-
-5.  **View the Results:**
-    *   A new field named `fornyelsebehov` will be added to your layer's attribute table.
-    *   You can now use this field to style your layer (e.g., using a graduated symbology) to visually identify high-risk pipes.
-
-## The Calculation Model
-
-### 1. Base Renewal Need (Herz Model)
-
-The base renewal need is calculated from a survival function, `S(t)`, based on the Herz model. The renewal need is `1 - S(t)`. The survival probability `S(t)` is calculated as:
-
-`S(t) = 1 / (1 + ((t - c) / a)^b)`
-
-Where:
-*   `t` is the age of the pipe.
-*   `a`, `b`, and `c` are parameters that depend on the pipe's material and installation year, based on the tables provided by the user.
-
-### 2. Optional Dimension Weighting
-
-If enabled, the base renewal need is multiplied by a consequence factor based on the pipe's dimension. The formula is:
-
-`Final Score = Renewal Need * (1 + (Dimension * Factor))`
-
-This allows you to give a higher weight to larger pipes, where a failure would have a greater consequence.
+[License Name/Type]
