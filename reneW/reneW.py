@@ -7,7 +7,7 @@ from qgis.PyQt.QtCore import QVariant, Qt
 from qgis.core import (QgsProject, QgsVectorLayer, QgsField, QgsGeometry,
                      QgsFeature, QgsFillSymbol, QgsSimpleFillSymbolLayer,
                      QgsGraduatedSymbolRenderer, QgsSymbol, QgsRendererRange,
-                     QgsStyle, QgsSimpleLineSymbol)
+                     QgsStyle, QgsSimpleLineSymbolLayer)
 from qgis.gui import QgsBlurEffect
 
 # Import the code for the dialog and the calculation logic
