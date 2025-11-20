@@ -1,9 +1,9 @@
 import os
 from datetime import datetime
 
-from qgis.PyQt.QtWidgets import QAction
+from qgis.PyQt.QtWidgets import QAction, QProgressDialog
 from qgis.PyQt.QtGui import QIcon, QColor
-from qgis.PyQt.QtCore import QVariant
+from qgis.PyQt.QtCore import QVariant, Qt
 from qgis.core import (QgsProject, QgsVectorLayer, QgsField, QgsGeometry,
                      QgsFeature, QgsFillSymbol, QgsSimpleFill)
 from qgis.gui import QgsBlurEffect
@@ -11,7 +11,7 @@ from qgis.gui import QgsBlurEffect
 # Import the code for the dialog and the calculation logic
 from .reneW_dialog import ReneWDialog
 from .results_dialog import ResultsDialog
-from . import calculation_logic
+from .risk_manager import RiskManager
 
 class ReneW:
     """QGIS Plugin Implementation."""
@@ -31,6 +31,7 @@ class ReneW:
         self.toolbar.setObjectName(u'reneW')
         self.dlg = None
         self.results_dialog = None
+        self.risk_manager = RiskManager()
 
     def _handle_zoom_to_feature(self, layer_id, feature_id):
         """Zooms the map canvas to a specific feature."""
@@ -109,111 +110,43 @@ class ReneW:
                 return
 
             processed_layers = 0
-            high_risk_results = []
-            current_year = datetime.now().year
+            all_high_risk_results = []
 
-            for config in analysis_configs:
-                layer = config['layer']
-                layer_type = config['type'] # Vatten, Spillvatten, or Dagvatten
+            # Create Progress Dialog
+            total_steps = len(analysis_configs) * 100
+            progress_dialog = QProgressDialog("Analyserar ledningsnät...", "Avbryt", 0, total_steps, self.iface.mainWindow())
+            progress_dialog.setWindowModality(Qt.WindowModal)
+            progress_dialog.show()
 
-                # Map dialog type to calculation logic type
-                if layer_type in ['Spillvatten', 'Dagvatten']:
-                    calc_pipeline_type = 'Avlopp'
-                else:
-                    calc_pipeline_type = 'Vatten'
+            for i, config in enumerate(analysis_configs):
+                if progress_dialog.wasCanceled():
+                    break
 
-                output_field_name = 'fornyelsebehov'
-                provider = layer.dataProvider()
-                fields = provider.fields()
+                layer_name = config['layer'].name()
+                progress_dialog.setLabelText(f"Analyserar {layer_name}...")
 
-                if fields.indexFromName(output_field_name) == -1:
-                    provider.addAttributes([QgsField(output_field_name, QVariant.Double)])
-                    layer.updateFields()
+                def update_progress(percent):
+                    # Map 0-100 percent for this layer to the global progress
+                    current_base = i * 100
+                    progress_dialog.setValue(current_base + percent)
 
-                material_idx = fields.indexFromName(config['material_field'])
-                year_idx = fields.indexFromName(config['year_field'])
-                dimension_idx = fields.indexFromName(config['dimension_field'])
-                reno_year_idx = fields.indexFromName(config['reno_year_field'])
-                reno_method_idx = fields.indexFromName(config['reno_method_field'])
-                output_idx = fields.indexFromName(output_field_name)
+                result = self.risk_manager.execute_analysis(
+                    layer=config['layer'],
+                    config=config,
+                    use_dimension_weighting=use_dimension_weighting,
+                    dimension_factor=dimension_factor,
+                    progress_callback=update_progress
+                )
 
-                # Only the base fields are strictly required
-                if any(idx == -1 for idx in [material_idx, year_idx, dimension_idx]):
-                    self.iface.messageBar().pushMessage("Error", f"Något av grundfälten (material, anläggningsår, dimension) kunde inte hittas i lagret '{layer.name()}'. Hoppar över.", level=1)
-                    continue
-
-                layer.startEditing()
-                for feature in layer.getFeatures():
-                    attrs = feature.attributes()
-                    material = attrs[material_idx]
-
-                    try:
-                        installation_year = int(attrs[year_idx])
-                    except (ValueError, TypeError, AttributeError):
-                        installation_year = current_year
-
-                    # Default age is based on installation year
-                    age = max(0, current_year - installation_year)
-
-                    # Check for renovation data and override age if applicable
-                    if config.get('reno_method_field') and config.get('reno_year_field'):
-                        reno_method_idx = fields.indexFromName(config['reno_method_field'])
-                        reno_year_idx = fields.indexFromName(config['reno_year_field'])
-
-                        if reno_method_idx != -1 and reno_year_idx != -1:
-                            reno_method = attrs[reno_method_idx]
-                            if reno_method and isinstance(reno_method, str):
-                                if 'infodring' in reno_method.lower() or 'strumpa' in reno_method.lower():
-                                    try:
-                                        reno_year = int(attrs[reno_year_idx])
-                                        age = max(0, current_year - reno_year)
-                                    except (ValueError, TypeError, AttributeError):
-                                        pass # Keep original age if reno year is invalid
-
-                    # Handle dimension parsing (e.g., "225_I")
-                    dimension_val = attrs[dimension_idx]
-                    dimension = 0.0
-                    if isinstance(dimension_val, (int, float)):
-                        dimension = float(dimension_val)
-                    elif isinstance(dimension_val, str):
-                        try:
-                            # Extract numeric part before any non-numeric characters
-                            numeric_part = ''.join(filter(lambda c: c.isdigit() or c == '.', dimension_val.split('_')[0].split('/')[0]))
-                            if numeric_part:
-                                dimension = float(numeric_part)
-                        except (ValueError, TypeError):
-                            dimension = 0.0
-
-                    renewal_need = calculation_logic.calculate_renewal_need(
-                        pipeline_type=layer_type, # Pass the specific layer type
-                        material=material,
-                        age=age,
-                        year=installation_year,
-                        dimension=dimension,
-                        use_dimension_weighting=use_dimension_weighting,
-                        dimension_factor=dimension_factor
-                    )
-
-                    layer.changeAttributeValue(feature.id(), output_idx, renewal_need)
-
-                    # Collect high-risk results for the table
-                    # Using a threshold of 0.5 as a default for "high-risk"
-                    if renewal_need >= 0.5:
-                        high_risk_results.append({
-                            'layer_name': layer.name(),
-                            'layer_id': layer.id(),
-                            'feature_id': feature.id(),
-                            'material': material,
-                            'age': age,
-                            'renewal_need': renewal_need
-                        })
-
-                if layer.commitChanges():
-                    self.iface.messageBar().pushMessage("Success", f"Beräkning klar för lagret '{layer.name()}'.", level=0, duration=4)
+                if result['status']:
+                    self.iface.messageBar().pushMessage("Success", result['message'], level=0, duration=4)
                     processed_layers += 1
+                    all_high_risk_results.extend(result['high_risk_results'])
                 else:
-                    layer.rollBack()
-                    self.iface.messageBar().pushMessage("Error", f"Kunde inte spara ändringar för lagret '{layer.name()}'.", level=1)
+                    level = 1 if "Error" in result['message'] else 1 # Use Warning/Error level
+                    self.iface.messageBar().pushMessage("Error", result['message'], level=level)
+
+            progress_dialog.close()
 
             if processed_layers > 0:
                 self.iface.messageBar().pushMessage("Info", f"Analys slutförd för {processed_layers} lager.", level=0, duration=5)
@@ -237,13 +170,13 @@ class ReneW:
                     self._create_hotspot_layer(hotspot_geom, first_layer_crs)
 
             # --- Show results dialog if there are high-risk items ---
-            if high_risk_results:
+            if all_high_risk_results:
                 # Sort results by renewal need, descending
-                high_risk_results.sort(key=lambda x: x['renewal_need'], reverse=True)
+                all_high_risk_results.sort(key=lambda x: x['renewal_need'], reverse=True)
 
                 self.results_dialog = ResultsDialog(parent=self.iface.mainWindow(), hotspot_count=hotspot_count)
                 self.results_dialog.zoom_to_feature_signal.connect(self._handle_zoom_to_feature)
-                self.results_dialog.populate_table(high_risk_results)
+                self.results_dialog.populate_table(all_high_risk_results)
                 self.results_dialog.show()
 
     def _run_hotspot_analysis(self, analysis_configs, threshold, distance):
