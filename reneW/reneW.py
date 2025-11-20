@@ -5,7 +5,7 @@ from qgis.PyQt.QtWidgets import QAction, QProgressDialog
 from qgis.PyQt.QtGui import QIcon, QColor
 from qgis.PyQt.QtCore import QVariant, Qt
 from qgis.core import (QgsProject, QgsVectorLayer, QgsField, QgsGeometry,
-                     QgsFeature, QgsFillSymbol, QgsSimpleFill,
+                     QgsFeature, QgsFillSymbol, QgsSimpleFillSymbolLayer,
                      QgsGraduatedSymbolRenderer, QgsSymbol, QgsRendererRange,
                      QgsStyle, QgsSimpleLineSymbol)
 from qgis.gui import QgsBlurEffect
@@ -288,12 +288,15 @@ class ReneW:
         pr.addFeatures(new_features)
 
         # 4. Style the Project Layer
-        symbol = QgsFillSymbol.createSimple({
+        symbol = QgsFillSymbol()
+        symbol.deleteSymbolLayer(0)
+        symbol_layer = QgsSimpleFillSymbolLayer.create({
             'color': '0,0,255,0', # Transparent fill
             'outline_color': '0,0,255,255', # Blue outline
             'outline_width': '1.0',
             'style': 'no'
         })
+        symbol.appendSymbolLayer(symbol_layer)
         vl.renderer().setSymbol(symbol)
 
         QgsProject.instance().addMapLayer(vl)
