@@ -6,244 +6,327 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>500</width>
-    <height>650</height>
+    <width>550</width>
+    <height>700</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>reneW - Riskkalkylering</string>
   </property>
-  <layout class="QVBoxLayout" name="verticalLayout_2">
+  <layout class="QVBoxLayout" name="verticalLayout_main">
    <item>
-    <widget class="QGroupBox" name="mGroupSystem">
-     <property name="title">
-      <string>Välj Ledningsslag</string>
+    <widget class="QTabWidget" name="mTabWidget">
+     <property name="currentIndex">
+      <number>0</number>
      </property>
-     <layout class="QHBoxLayout" name="horizontalLayout_2">
-      <item>
-       <widget class="QLabel" name="label_type">
-        <property name="text">
-         <string>Systemtyp:</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QComboBox" name="mComboSystemType">
-        <item>
-         <property name="text">
-          <string>Vatten</string>
+
+     <!-- Tab 1: Riskberäkning -->
+     <widget class="QWidget" name="tabRisk">
+      <attribute name="title">
+       <string>Riskberäkning</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="verticalLayout_risk">
+       <item>
+        <widget class="QGroupBox" name="mGroupSystem">
+         <property name="title">
+          <string>Välj Ledningsslag</string>
          </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>Spillvatten</string>
+         <layout class="QHBoxLayout" name="horizontalLayout_2">
+          <item>
+           <widget class="QLabel" name="label_type">
+            <property name="text">
+             <string>Systemtyp:</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QComboBox" name="mComboSystemType">
+            <item>
+             <property name="text">
+              <string>Vatten</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>Spillvatten</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>Dagvatten</string>
+             </property>
+            </item>
+           </widget>
+          </item>
+          <item>
+           <spacer name="horizontalSpacer_2">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="mGroupLayer">
+         <property name="title">
+          <string>Konfiguration</string>
          </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>Dagvatten</string>
+         <layout class="QGridLayout" name="gridLayout">
+          <item row="0" column="0">
+           <widget class="QLabel" name="label_2">
+            <property name="text">
+             <string>Lager:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QgsMapLayerComboBox" name="mMapLayerCombo"/>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="label_3">
+            <property name="text">
+             <string>Materialfält:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QgsFieldComboBox" name="mFieldComboMaterial"/>
+          </item>
+          <item row="2" column="0">
+           <widget class="QLabel" name="label_4">
+            <property name="text">
+             <string>Anläggningsår:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="1">
+           <widget class="QgsFieldComboBox" name="mFieldComboYear"/>
+          </item>
+          <item row="3" column="0">
+           <widget class="QLabel" name="label_5">
+            <property name="text">
+             <string>Dimensionsfält:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="1">
+           <widget class="QgsFieldComboBox" name="mFieldComboDimension"/>
+          </item>
+          <item row="4" column="0">
+           <widget class="QLabel" name="label_15">
+            <property name="text">
+             <string>Renoveringsår (valfritt):</string>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="1">
+           <widget class="QgsFieldComboBox" name="mFieldComboRenoYear">
+            <property name="allowEmptyFieldName">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item row="5" column="0">
+           <widget class="QLabel" name="label_16">
+            <property name="text">
+             <string>Renoveringsmetod (valfritt):</string>
+            </property>
+           </widget>
+          </item>
+          <item row="5" column="1">
+           <widget class="QgsFieldComboBox" name="mFieldComboRenoMethod">
+            <property name="allowEmptyFieldName">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="groupBox">
+         <property name="title">
+          <string>Globala inställningar</string>
          </property>
-        </item>
-       </widget>
-      </item>
-      <item>
-       <spacer name="horizontalSpacer_2">
-        <property name="orientation">
-         <enum>Qt::Horizontal</enum>
-        </property>
-        <property name="sizeHint" stdset="0">
-         <size>
-          <width>40</width>
-          <height>20</height>
-         </size>
-        </property>
-       </spacer>
-      </item>
-     </layout>
+         <layout class="QHBoxLayout" name="horizontalLayout">
+          <item>
+           <widget class="QCheckBox" name="mCheckBoxEnableDimensionWeighting">
+            <property name="text">
+             <string>Använd dimensionsviktning (faktor):</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QDoubleSpinBox" name="mSpinBoxDimensionFactor">
+            <property name="enabled">
+             <bool>false</bool>
+            </property>
+            <property name="decimals">
+             <number>4</number>
+            </property>
+            <property name="singleStep">
+             <double>0.0001</double>
+            </property>
+            <property name="value">
+             <double>0.0010</double>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="horizontalSpacer">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <spacer name="verticalSpacer_risk">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+
+     <!-- Tab 2: Samordning & Hotspots -->
+     <widget class="QWidget" name="tabHotspot">
+      <attribute name="title">
+       <string>Samordning &amp; Hotspots</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="verticalLayout_hotspot">
+       <item>
+        <widget class="QLabel" name="label_info">
+         <property name="text">
+          <string>Välj beräknade lager för att hitta samordningsvinster.</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="mGroupLayersHotspot">
+         <property name="title">
+          <string>Indatalager (måste ha fältet 'fornyelsebehov')</string>
+         </property>
+         <layout class="QGridLayout" name="gridLayout_layers_hotspot">
+          <item row="0" column="0">
+           <widget class="QLabel" name="label_vatten_h">
+            <property name="text">
+             <string>Vattenlager (Beräknat):</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QgsMapLayerComboBox" name="mMapLayerComboVattenHotspot"/>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="label_spill_h">
+            <property name="text">
+             <string>Spillvattenlager (Beräknat):</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QgsMapLayerComboBox" name="mMapLayerComboSpillHotspot"/>
+          </item>
+          <item row="2" column="0">
+           <widget class="QLabel" name="label_dag_h">
+            <property name="text">
+             <string>Dagvattenlager (Beräknat):</string>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="1">
+           <widget class="QgsMapLayerComboBox" name="mMapLayerComboDagHotspot"/>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="mGroupHotspot">
+         <property name="title">
+          <string>Hotspot-parametrar</string>
+         </property>
+         <layout class="QGridLayout" name="gridLayout_hotspot">
+          <item row="0" column="0">
+           <widget class="QLabel" name="label_thresh">
+            <property name="text">
+             <string>Tröskelvärde för förnyelsebehov:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QDoubleSpinBox" name="mSpinBoxHotspotThreshold">
+            <property name="value">
+             <double>0.5000</double>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="label_dist">
+            <property name="text">
+             <string>Sökavstånd för kluster (meter):</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QDoubleSpinBox" name="mSpinBoxHotspotDistance">
+            <property name="value">
+             <double>5.0000</double>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="mBtnRunHotspot">
+         <property name="text">
+          <string>Hitta samordningsvinster</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="verticalSpacer_hotspot">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
     </widget>
-   </item>
-   <item>
-    <widget class="QGroupBox" name="mGroupLayer">
-     <property name="title">
-      <string>Konfiguration</string>
-     </property>
-     <layout class="QGridLayout" name="gridLayout">
-      <item row="0" column="0">
-       <widget class="QLabel" name="label_2">
-        <property name="text">
-         <string>Lager:</string>
-        </property>
-       </widget>
-      </item>
-      <item row="0" column="1">
-       <widget class="QgsMapLayerComboBox" name="mMapLayerCombo"/>
-      </item>
-      <item row="1" column="0">
-       <widget class="QLabel" name="label_3">
-        <property name="text">
-         <string>Materialfält:</string>
-        </property>
-       </widget>
-      </item>
-      <item row="1" column="1">
-       <widget class="QgsFieldComboBox" name="mFieldComboMaterial"/>
-      </item>
-      <item row="2" column="0">
-       <widget class="QLabel" name="label_4">
-        <property name="text">
-         <string>Anläggningsår:</string>
-        </property>
-       </widget>
-      </item>
-      <item row="2" column="1">
-       <widget class="QgsFieldComboBox" name="mFieldComboYear"/>
-      </item>
-      <item row="3" column="0">
-       <widget class="QLabel" name="label_5">
-        <property name="text">
-         <string>Dimensionsfält:</string>
-        </property>
-       </widget>
-      </item>
-      <item row="3" column="1">
-       <widget class="QgsFieldComboBox" name="mFieldComboDimension"/>
-      </item>
-      <item row="4" column="0">
-       <widget class="QLabel" name="label_15">
-        <property name="text">
-         <string>Renoveringsår (valfritt):</string>
-        </property>
-       </widget>
-      </item>
-      <item row="4" column="1">
-       <widget class="QgsFieldComboBox" name="mFieldComboRenoYear">
-        <property name="allowEmptyFieldName">
-         <bool>true</bool>
-        </property>
-       </widget>
-      </item>
-      <item row="5" column="0">
-       <widget class="QLabel" name="label_16">
-        <property name="text">
-         <string>Renoveringsmetod (valfritt):</string>
-        </property>
-       </widget>
-      </item>
-      <item row="5" column="1">
-       <widget class="QgsFieldComboBox" name="mFieldComboRenoMethod">
-        <property name="allowEmptyFieldName">
-         <bool>true</bool>
-        </property>
-       </widget>
-      </item>
-     </layout>
-    </widget>
-   </item>
-   <item>
-    <widget class="QGroupBox" name="groupBox">
-     <property name="title">
-      <string>Globala inställningar</string>
-     </property>
-     <layout class="QHBoxLayout" name="horizontalLayout">
-      <item>
-       <widget class="QCheckBox" name="mCheckBoxEnableDimensionWeighting">
-        <property name="text">
-         <string>Använd dimensionsviktning (faktor):</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QDoubleSpinBox" name="mSpinBoxDimensionFactor">
-        <property name="enabled">
-         <bool>false</bool>
-        </property>
-        <property name="decimals">
-         <number>4</number>
-        </property>
-        <property name="singleStep">
-         <double>0.0001</double>
-        </property>
-        <property name="value">
-         <double>0.0010</double>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <spacer name="horizontalSpacer">
-        <property name="orientation">
-         <enum>Qt::Horizontal</enum>
-        </property>
-        <property name="sizeHint" stdset="0">
-         <size>
-          <width>40</width>
-          <height>20</height>
-         </size>
-        </property>
-       </spacer>
-      </item>
-     </layout>
-    </widget>
-   </item>
-   <item>
-    <widget class="QGroupBox" name="mGroupHotspot">
-     <property name="title">
-      <string>Hotspot-analys (Experimentell)</string>
-     </property>
-     <layout class="QVBoxLayout" name="verticalLayout">
-      <item>
-       <widget class="QCheckBox" name="mCheckHotspot">
-        <property name="text">
-         <string>Identifiera hotspots (där högriskledningar från olika lager korsar varandra)</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <layout class="QGridLayout" name="gridLayout_hotspot">
-        <item row="0" column="0">
-         <widget class="QLabel" name="label">
-          <property name="text">
-           <string>Tröskelvärde för förnyelsebehov:</string>
-          </property>
-         </widget>
-        </item>
-        <item row="0" column="1">
-         <widget class="QDoubleSpinBox" name="mSpinBoxHotspotThreshold">
-          <property name="value">
-           <double>0.5000</double>
-          </property>
-         </widget>
-        </item>
-        <item row="1" column="0">
-         <widget class="QLabel" name="label_14">
-          <property name="text">
-           <string>Sökavstånd för kluster (meter):</string>
-          </property>
-         </widget>
-        </item>
-        <item row="1" column="1">
-         <widget class="QDoubleSpinBox" name="mSpinBoxHotspotDistance">
-          <property name="value">
-           <double>5.0000</double>
-          </property>
-         </widget>
-        </item>
-       </layout>
-      </item>
-     </layout>
-    </widget>
-   </item>
-   <item>
-    <spacer name="verticalSpacer_2">
-     <property name="orientation">
-      <enum>Qt::Vertical</enum>
-     </property>
-     <property name="sizeHint" stdset="0">
-      <size>
-       <width>20</width>
-       <height>40</height>
-      </size>
-     </property>
-    </spacer>
    </item>
    <item>
     <widget class="QDialogButtonBox" name="button_box">

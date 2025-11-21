@@ -4,7 +4,6 @@ from datetime import datetime
 from qgis.PyQt.QtWidgets import QAction, QProgressDialog
 from qgis.PyQt.QtGui import QIcon, QColor
 from qgis.PyQt.QtCore import QVariant, Qt
-
 # HOLISTIC IMPORT FIX: All render effects and symbol layers are in qgis.core
 from qgis.core import (
     QgsProject,
@@ -22,7 +21,6 @@ from qgis.core import (
     QgsBlurEffect # Moved from gui to core
 )
 
-# Import the code for the dialog and the calculation logic
 from .reneW_dialog import ReneWDialog
 from .results_dialog import ResultsDialog
 from .risk_manager import RiskManager
@@ -104,96 +102,186 @@ class ReneW:
         self.dlg.load_settings()
 
         self.dlg.show()
+
+        # Connect the Hotspot button signal
+        try: self.dlg.mBtnRunHotspot.clicked.disconnect()
+        except: pass
+        self.dlg.mBtnRunHotspot.clicked.connect(self.run_strategic_hotspots)
+
         result = self.dlg.exec_()
 
         if result:
+            # If "OK" is clicked, we assume the user wants to run the logic
+            # appropriate for the currently active tab.
+
             # Save settings on successful run
             self.dlg.save_settings()
 
-            analysis_configs = self.dlg.get_analysis_configs()
-            use_dimension_weighting = self.dlg.useDimensionWeighting()
-            dimension_factor = self.dlg.dimensionFactor()
+            current_tab_index = self.dlg.mTabWidget.currentIndex()
 
-            if not analysis_configs:
-                self.iface.messageBar().pushMessage("Info", "Inga lager valdes för analys.", level=0, duration=3)
-                return
+            # Tab 0: Risk Calculation
+            if current_tab_index == 0:
+                self.run_risk_calculation()
 
-            processed_layers = 0
-            all_high_risk_results = []
+            # Tab 1: Coordination & Hotspots
+            # (If user clicked OK here, we can also run hotspot analysis,
+            # although there is a dedicated button for it)
+            elif current_tab_index == 1:
+                self.run_strategic_hotspots()
 
-            # Create Progress Dialog
-            total_steps = len(analysis_configs) * 100
-            progress_dialog = QProgressDialog("Analyserar ledningsnät...", "Avbryt", 0, total_steps, self.iface.mainWindow())
-            progress_dialog.setWindowModality(Qt.WindowModal)
-            progress_dialog.show()
+    def run_risk_calculation(self):
+        """Executes the risk calculation logic (Tab 1)."""
+        analysis_configs = self.dlg.get_analysis_configs()
+        use_dimension_weighting = self.dlg.useDimensionWeighting()
+        dimension_factor = self.dlg.dimensionFactor()
 
-            for i, config in enumerate(analysis_configs):
-                if progress_dialog.wasCanceled():
-                    break
+        if not analysis_configs:
+            self.iface.messageBar().pushMessage("Info", "Inga lager valdes för analys.", level=0, duration=3)
+            return
 
-                layer = config['layer']
-                layer_name = layer.name()
-                progress_dialog.setLabelText(f"Analyserar {layer_name}...")
+        processed_layers = 0
+        all_high_risk_results = []
 
-                def update_progress(percent):
-                    current_base = i * 100
-                    progress_dialog.setValue(current_base + percent)
+        # Create Progress Dialog
+        total_steps = len(analysis_configs) * 100
+        progress_dialog = QProgressDialog("Analyserar ledningsnät...", "Avbryt", 0, total_steps, self.iface.mainWindow())
+        progress_dialog.setWindowModality(Qt.WindowModal)
+        progress_dialog.show()
 
-                result = self.risk_manager.execute_analysis(
-                    layer=layer,
-                    config=config,
-                    use_dimension_weighting=use_dimension_weighting,
-                    dimension_factor=dimension_factor,
-                    progress_callback=update_progress
-                )
+        for i, config in enumerate(analysis_configs):
+            if progress_dialog.wasCanceled():
+                break
 
-                if result['status']:
-                    self.iface.messageBar().pushMessage("Success", result['message'], level=0, duration=4)
-                    processed_layers += 1
-                    all_high_risk_results.extend(result['high_risk_results'])
+            layer = config['layer']
+            layer_name = layer.name()
+            progress_dialog.setLabelText(f"Analyserar {layer_name}...")
 
-                    # Apply auto-styling to highlight risk
-                    self._apply_risk_styling(layer)
+            def update_progress(percent):
+                current_base = i * 100
+                progress_dialog.setValue(current_base + percent)
 
-                else:
-                    level = 1 if "Error" in result['message'] else 1
-                    self.iface.messageBar().pushMessage("Error", result['message'], level=level)
+            result = self.risk_manager.execute_analysis(
+                layer=layer,
+                config=config,
+                use_dimension_weighting=use_dimension_weighting,
+                dimension_factor=dimension_factor,
+                progress_callback=update_progress
+            )
 
-            progress_dialog.close()
+            if result['status']:
+                self.iface.messageBar().pushMessage("Success", result['message'], level=0, duration=4)
+                processed_layers += 1
+                all_high_risk_results.extend(result['high_risk_results'])
 
-            if processed_layers > 0:
-                self.iface.messageBar().pushMessage("Info", f"Analys slutförd för {processed_layers} lager.", level=0, duration=5)
-                self.iface.mapCanvas().refresh()
+                # Apply auto-styling to highlight risk
+                self._apply_risk_styling(layer)
 
-            # --- Run hotspot analysis if enabled ---
-            hotspot_count = 0
-            if self.dlg.isHotspotAnalysisEnabled() and analysis_configs:
-                hotspot_threshold = self.dlg.getHotspotThreshold()
-                hotspot_distance = self.dlg.getHotspotDistance()
-                hotspot_geom = self._run_hotspot_analysis(analysis_configs, hotspot_threshold, hotspot_distance)
+            else:
+                level = 1 if "Error" in result['message'] else 1
+                self.iface.messageBar().pushMessage("Error", result['message'], level=level)
 
-                if hotspot_geom:
-                    if hotspot_geom.isMultipart():
-                        hotspot_count = len(hotspot_geom.asMultiPolygon())
-                    else:
-                        hotspot_count = 1
-                    first_layer_crs = analysis_configs[0]['layer'].crs()
-                    self._create_hotspot_layer(hotspot_geom, first_layer_crs)
+        progress_dialog.close()
 
-            # --- Generate Project Bundles ---
-            # Spatial clustering of high-risk items
-            if all_high_risk_results:
-                self._generate_project_bundles(all_high_risk_results, analysis_configs[0]['layer'].crs())
+        if processed_layers > 0:
+            self.iface.messageBar().pushMessage("Info", f"Analys slutförd för {processed_layers} lager.", level=0, duration=5)
+            self.iface.mapCanvas().refresh()
 
-            # --- Show results dialog if there are high-risk items ---
-            if all_high_risk_results:
-                # Sort by Risk Cost (descending) by default
-                all_high_risk_results.sort(key=lambda x: x.get('risk_cost', 0.0), reverse=True)
+        # Show results dialog if there are high-risk items
+        if all_high_risk_results:
+            # Sort by Risk Cost (descending) by default
+            all_high_risk_results.sort(key=lambda x: x.get('risk_cost', 0.0), reverse=True)
 
-                self.results_dialog = ResultsDialog(parent=self.iface.mainWindow(), hotspot_count=hotspot_count)
-                self.results_dialog.zoom_to_feature_signal.connect(self._handle_zoom_to_feature)
-                self.results_dialog.populate_table(all_high_risk_results)
-                self.results_dialog.show()
+            self.results_dialog = ResultsDialog(parent=self.iface.mainWindow())
+            self.results_dialog.zoom_to_feature_signal.connect(self._handle_zoom_to_feature)
+            self.results_dialog.populate_table(all_high_risk_results)
+            self.results_dialog.show()
+
+    def run_strategic_hotspots(self):
+        """Executes the multi-layer hotspot logic (Tab 2)."""
+        # If called via button, we might want to close dialog, or keep it open.
+        # If called via "OK", dialog is already closing.
+        # Let's assume we run logic and maybe close if triggered by button?
+        # Standard practice: "Run" button keeps dialog open?
+        # Instruction said: "Click 'Hitta...'" -> implies action.
+        # I will run it. If triggered by button, dialog stays open unless I close it.
+        # Given the user workflow "Tab 1 Run... Tab 1 Run... Tab 2 Click", keeping it open is fine.
+
+        layers_map = self.dlg.get_hotspot_layers()
+        threshold = self.dlg.getHotspotThreshold()
+        distance = self.dlg.getHotspotDistance()
+
+        # Filter out None layers
+        active_layers = {k: v for k, v in layers_map.items() if v is not None}
+
+        if len(active_layers) < 2:
+             self.iface.messageBar().pushMessage("Info", "Välj minst två lager för att hitta samordningsvinster.", level=0, duration=4)
+             return
+
+        hotspot_geom = self._run_hotspot_analysis_multi(active_layers, threshold, distance)
+
+        if hotspot_geom:
+            first_layer_crs = list(active_layers.values())[0].crs()
+            self._create_hotspot_layer(hotspot_geom, first_layer_crs)
+            self.iface.messageBar().pushMessage("Success", "Hotspots skapade.", level=0, duration=3)
+        else:
+            self.iface.messageBar().pushMessage("Info", "Inga hotspots hittades med angivna parametrar.", level=0, duration=3)
+
+    def _run_hotspot_analysis_multi(self, layers_map, threshold, distance):
+        """
+        Performs intersection analysis on provided layers.
+        layers_map: {'Vatten': QgsVectorLayer, ...}
+        """
+        self.iface.messageBar().pushMessage("Info", "Analyserar samordning...", level=0, duration=3)
+
+        high_risk_geoms = {} # Type -> [QgsGeometry]
+
+        # 1. Filter high-risk features from each layer
+        for l_type, layer in layers_map.items():
+            field_name = 'fornyelsebehov'
+            if layer.fields().indexFromName(field_name) == -1:
+                continue
+
+            feats = []
+            for feature in layer.getFeatures():
+                if feature[field_name] is not None and feature[field_name] >= threshold:
+                    if feature.hasGeometry():
+                        feats.append(feature.geometry())
+
+            if feats:
+                high_risk_geoms[l_type] = feats
+
+        if len(high_risk_geoms) < 2:
+            return None
+
+        # 2. Create dissolved buffers
+        buffered_geometries = {}
+        for l_type, geoms in high_risk_geoms.items():
+            combined = QgsGeometry.collectGeometry(geoms)
+            buffered = combined.buffer(distance, 5)
+            buffered_geometries[l_type] = buffered
+
+        # 3. Intersections
+        hotspot_polygons = []
+        # Define pairs to check
+        pairs = [
+            ('Vatten', 'Spillvatten'),
+            ('Vatten', 'Dagvatten'),
+            ('Spillvatten', 'Dagvatten')
+        ]
+
+        for t1, t2 in pairs:
+            if t1 in buffered_geometries and t2 in buffered_geometries:
+                g1 = buffered_geometries[t1]
+                g2 = buffered_geometries[t2]
+
+                intersection = g1.intersection(g2)
+                if not intersection.isEmpty():
+                    hotspot_polygons.append(intersection)
+
+        if not hotspot_polygons:
+            return None
+
+        return QgsGeometry.collectGeometry(hotspot_polygons)
 
     def _apply_risk_styling(self, layer):
         """Applies a graduated renderer to the layer based on RISK_COST."""
@@ -201,15 +289,11 @@ class ReneW:
         if layer.fields().indexFromName(target_field) == -1:
             return
 
-        # Simplified approach using default style or just modifying current
-        # Creating a ramp 'Reds'
         ramp = QgsStyle.defaultStyle().colorRamp('Reds')
         if not ramp:
-             # Fallback if 'Reds' isn't found in default style (rare)
              ramp = QgsStyle.defaultStyle().colorRamp('Spectral')
              if ramp: ramp.invert()
 
-        # Create the renderer
         renderer = QgsGraduatedSymbolRenderer.createRenderer(
             layer,
             target_field,
@@ -225,19 +309,16 @@ class ReneW:
 
     def _generate_project_bundles(self, high_risk_results, crs, score_threshold=2.0):
         """
-        Clusters high risk features into 'Project Bundles'.
+        Clusters high risk features into 'Project Bundles' (Single Layer Logic).
+        Kept for Tab 1 individual analysis result generation.
         """
         if not high_risk_results:
             return
 
-        # 1. Collect Geometries
         geoms = []
-
         for item in high_risk_results:
-            # Filter strictly by RISK_SCORE for strategic bundling
             if item.get('risk_score', 0.0) < score_threshold:
                 continue
-
             layer = QgsProject.instance().mapLayer(item['layer_id'])
             if layer:
                 f = layer.getFeature(item['feature_id'])
@@ -247,7 +328,6 @@ class ReneW:
         if not geoms:
             return
 
-        # 2. Buffer & Dissolve
         buffers = [g.buffer(20, 5) for g in geoms]
         combined = QgsGeometry.unaryUnion(buffers)
 
@@ -260,8 +340,7 @@ class ReneW:
         else:
             project_polygons = [combined.asPolygon()]
 
-        # 3. Create Memory Layer
-        vl = QgsVectorLayer(f"Polygon?crs={crs.authid()}", "Föreslagna Projekt", "memory")
+        vl = QgsVectorLayer(f"Polygon?crs={crs.authid()}", "Föreslagna Projekt (Enskilda)", "memory")
         pr = vl.dataProvider()
         pr.addAttributes([
             QgsField("TOTAL_RISK", QVariant.Double),
@@ -271,10 +350,7 @@ class ReneW:
 
         new_features = []
         for i, poly_pts in enumerate(project_polygons):
-            # Create geometry from polygon points
             poly_geom = QgsGeometry.fromPolygonXY(poly_pts)
-
-            # Calculate Total Risk for this bundle
             bundle_risk = 0.0
 
             for item in high_risk_results:
@@ -291,13 +367,11 @@ class ReneW:
 
         pr.addFeatures(new_features)
 
-        # 4. Style the Project Layer
         symbol = QgsFillSymbol()
         symbol.deleteSymbolLayer(0)
-        # FIX: Use QgsSimpleFillSymbolLayer
         symbol_layer = QgsSimpleFillSymbolLayer.create({
-            'color': '0,0,255,0', # Transparent fill
-            'outline_color': '0,0,255,255', # Blue outline
+            'color': '0,0,255,0',
+            'outline_color': '0,0,255,255',
             'outline_width': '1.0',
             'style': 'no'
         })
@@ -305,100 +379,28 @@ class ReneW:
         vl.renderer().setSymbol(symbol)
 
         QgsProject.instance().addMapLayer(vl)
-        self.iface.messageBar().pushMessage("Info", f"Skapade {len(new_features)} projektförslag baserat på riskkluster (Tröskelvärde > {score_threshold}).", level=0, duration=5)
-
-    def _run_hotspot_analysis(self, analysis_configs, threshold, distance):
-        self.iface.messageBar().pushMessage("Info", "Startar hotspot-analys...", level=0, duration=3)
-
-        high_risk_features = {'Vatten': [], 'Spillvatten': [], 'Dagvatten': []}
-
-        # 1. Filter high-risk features
-        for config in analysis_configs:
-            layer = config['layer']
-            layer_type = config['type']
-
-            field_name = 'fornyelsebehov'
-            if layer.fields().indexFromName(field_name) == -1:
-                continue
-
-            for feature in layer.getFeatures():
-                if feature[field_name] is not None and feature[field_name] >= threshold:
-                    high_risk_features[layer_type].append(feature.geometry())
-
-        # 2. Check if we have enough data to find cross-type hotspots
-        active_types = [t for t, geoms in high_risk_features.items() if geoms]
-        if len(active_types) < 2:
-            self.iface.messageBar().pushMessage("Info", "Inte tillräckligt med högriskledningar från olika ledningstyper för att hitta hotspots.", level=0, duration=5)
-            return None
-
-        # 3. Create dissolved buffers for each active type
-        buffered_geometries = {}
-        for layer_type, geoms in high_risk_features.items():
-            if not geoms:
-                continue
-
-            combined_geom = QgsGeometry.collectGeometry(geoms)
-            buffer_geom = combined_geom.buffer(distance, 5)
-            buffered_geometries[layer_type] = buffer_geom
-
-        # 4. Find intersections between the buffered geometries
-        hotspot_polygons = []
-        type_pairs = [
-            ('Vatten', 'Spillvatten'),
-            ('Vatten', 'Dagvatten'),
-            ('Spillvatten', 'Dagvatten')
-        ]
-
-        for type1, type2 in type_pairs:
-            if type1 in buffered_geometries and type2 in buffered_geometries:
-                geom1 = buffered_geometries[type1]
-                geom2 = buffered_geometries[type2]
-
-                intersection = geom1.intersection(geom2)
-                if not intersection.isEmpty():
-                    hotspot_polygons.append(intersection)
-
-        if not hotspot_polygons:
-            self.iface.messageBar().pushMessage("Info", "Inga hotspots hittades.", level=0, duration=3)
-            return None
-
-        # 5. Combine all found hotspot polygons into a single geometry
-        final_hotspots_geom = QgsGeometry.collectGeometry(hotspot_polygons)
-
-        self.iface.messageBar().pushMessage("Success", f"{len(hotspot_polygons)} hotspot-områden identifierade.", level=0, duration=4)
-
-        return final_hotspots_geom
+        self.iface.messageBar().pushMessage("Info", f"Skapade {len(new_features)} projektförslag.", level=0, duration=5)
 
     def _create_hotspot_layer(self, hotspot_geom, crs):
-        # 1. Create a new memory layer with the correct CRS
-        vl = QgsVectorLayer(f"Polygon?crs={crs.authid()}", "Hotspots", "memory")
+        vl = QgsVectorLayer(f"Polygon?crs={crs.authid()}", "Samordningsvinster (Hotspots)", "memory")
         provider = vl.dataProvider()
 
-        # 2. Add the hotspot geometry as a feature
         feature = QgsFeature()
         feature.setGeometry(hotspot_geom)
         provider.addFeatures([feature])
 
-        # 3. Create the "Aura" style
         aura_symbol = QgsFillSymbol()
         aura_symbol.deleteSymbolLayer(0)
 
-        # Glow layers (multiple blurred layers)
         for blur_radius, opacity, color in [(12, 20, '255,50,50'), (8, 40, '255,0,0'), (4, 70, '200,0,0')]:
-            # FIX: Use QgsSimpleFillSymbolLayer
             glow_fill = QgsSimpleFillSymbolLayer.create({'color': f'{color},{opacity}', 'style': 'solid'})
-
-            # FIX: QgsBlurEffect is in core
             blur_effect = QgsBlurEffect()
             blur_effect.setBlurRadius(blur_radius)
             glow_fill.setPaintEffect(blur_effect)
-
             aura_symbol.appendSymbolLayer(glow_fill)
 
-        # 4. Apply the style to the layer
         renderer = vl.renderer()
         renderer.setSymbol(aura_symbol)
         vl.triggerRepaint()
 
-        # 5. Add the layer to the project
         QgsProject.instance().addMapLayer(vl)
