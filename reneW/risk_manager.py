@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime
-from qgis.core import QgsField
+from qgis.core import QgsField, QgsVectorLayer, QgsFeature, QgsGeometry
 from qgis.PyQt.QtCore import QVariant
 from . import calculation_logic
 from .utils import ParameterLoader, DataSanitizer
@@ -8,7 +8,8 @@ from .strategic_models import ConsequenceCalculator, EconomicModel
 
 class RiskManager:
     """
-    Manages the risk analysis workflow, decoupling business logic from the UI controller.
+    Manages the risk analysis workflow.
+    UPDATED v2.0: Non-Destructive (Memory Layer) + Smart Renovation Detection.
     """
 
     def __init__(self):
@@ -19,199 +20,139 @@ class RiskManager:
 
     def execute_analysis(self, layer, config, use_dimension_weighting, dimension_factor, progress_callback=None):
         """
-        Executes the renewal need analysis for a single layer.
-
-        :param layer: QgsVectorLayer to analyze.
-        :param config: Dictionary containing field mappings and layer type.
-        :param use_dimension_weighting: Boolean flag for weighting.
-        :param dimension_factor: Float factor for weighting.
-        :param progress_callback: Optional callable accepting an integer (0-100) for progress updates.
-        :return: Dictionary containing 'status' (bool), 'count' (int), 'high_risk_results' (list), 'message' (str).
+        Executes analysis creating a NEW memory layer (Non-destructive).
         """
-
         layer_type = config['type']
-
-        # Determine unit cost for this layer type
         unit_cost = self.unit_costs.get(layer_type, 0.0)
 
-        output_field_name = 'fornyelsebehov'
-        risk_score_field = 'RISK_SCORE'
-        risk_cost_field = 'RISK_COST'
+        # 1. Setup Memory Layer
+        # Copy fields from source
+        source_fields = layer.fields()
+        output_crs = layer.crs().authid()
 
-        provider = layer.dataProvider()
-        fields = provider.fields()
+        # Create memory layer
+        mem_layer_name = f"reneW: {layer.name()}"
+        mem_layer = QgsVectorLayer(f"LineString?crs={output_crs}", mem_layer_name, "memory")
+        mem_pr = mem_layer.dataProvider()
 
-        # Ensure output fields exist
-        new_fields = []
-        if fields.indexFromName(output_field_name) == -1:
-            new_fields.append(QgsField(output_field_name, QVariant.Double))
-        if fields.indexFromName(risk_score_field) == -1:
-            new_fields.append(QgsField(risk_score_field, QVariant.Double))
-        if fields.indexFromName(risk_cost_field) == -1:
-            new_fields.append(QgsField(risk_cost_field, QVariant.Double))
+        # Prepare fields (Source + New Risk Fields)
+        new_fields = [f for f in source_fields] # Copy existing
 
-        if new_fields:
-            provider.addAttributes(new_fields)
-            layer.updateFields()
-            fields = layer.fields() # Refresh
+        # Add Risk Fields if they don't exist in source (likely won't in memory layer context, but good practice)
+        out_field_map = {
+            'fornyelsebehov': QgsField('fornyelsebehov', QVariant.Double),
+            'RISK_SCORE': QgsField('RISK_SCORE', QVariant.Double),
+            'RISK_COST': QgsField('RISK_COST', QVariant.Double)
+        }
 
-        # Get field indices
-        material_idx = fields.indexFromName(config['material_field'])
-        year_idx = fields.indexFromName(config['year_field'])
-        dimension_idx = fields.indexFromName(config['dimension_field'])
-        output_idx = fields.indexFromName(output_field_name)
-        risk_score_idx = fields.indexFromName(risk_score_field)
-        risk_cost_idx = fields.indexFromName(risk_cost_field)
+        for fname, ffield in out_field_map.items():
+            new_fields.append(ffield)
 
-        # Validation
-        if any(idx == -1 for idx in [material_idx, year_idx, dimension_idx]):
-            return {
-                'status': False,
-                'count': 0,
-                'high_risk_results': [],
-                'message': f"Något av grundfälten (material, anläggningsår, dimension) kunde inte hittas i lagret '{layer.name()}'."
-            }
+        mem_pr.addAttributes(new_fields)
+        mem_layer.updateFields()
+
+        # Get Indices for calculation
+        try:
+            mat_idx = source_fields.indexFromName(config['material_field'])
+            year_idx = source_fields.indexFromName(config['year_field'])
+            dim_idx = source_fields.indexFromName(config['dimension_field'])
+        except KeyError:
+             return {'status': False, 'message': "Missing required fields."}
 
         current_year = datetime.now().year
         high_risk_results = []
+        new_features = []
 
         feature_count = layer.featureCount()
-        processed_count = 0
 
-        layer.startEditing()
+        # 2. Iterate and Calculate
+        for i, feature in enumerate(layer.getFeatures()):
+            if progress_callback and feature_count > 0 and i % 100 == 0:
+                progress_callback(int((i / feature_count) * 100))
 
-        try:
-            for i, feature in enumerate(layer.getFeatures()):
-                # Progress update
-                if progress_callback and feature_count > 0:
-                    if i % max(1, int(feature_count / 100)) == 0:
-                        percent = int((i / feature_count) * 100)
-                        progress_callback(percent)
+            attrs = feature.attributes()
 
-                attrs = feature.attributes()
+            # --- Logic Extraction ---
+            raw_material = attrs[mat_idx] if mat_idx != -1 else ""
+            raw_year = attrs[year_idx] if year_idx != -1 else 0
+            raw_dim = attrs[dim_idx] if dim_idx != -1 else 0
 
-                # --- DATA SANITIZATION SPRINT 3.5 ---
+            # Sanitization
+            install_year = DataSanitizer.sanitize_year(raw_year)
+            age = max(0, current_year - install_year)
+            dimension = DataSanitizer.sanitize_dimension(raw_dim)
 
-                # 1. Material
-                material = attrs[material_idx]
-                # MaterialNormalizer handles logic later, but we pass raw string.
+            # --- Smart Renovation Logic ---
+            # Keywords: u-liner, strumpa, infodring, relining, renovering
+            reno_keywords = ['u-liner', 'strumpa', 'infodring', 'relining', 'renovering']
+            is_renovated = False
+            material_for_calc = raw_material
 
-                # 2. Year (Sanitized)
-                raw_year = attrs[year_idx]
-                installation_year = DataSanitizer.sanitize_year(raw_year)
+            # Check explicit field
+            if config.get('reno_method_field'):
+                rm_idx = source_fields.indexFromName(config['reno_method_field'])
+                if rm_idx != -1 and attrs[rm_idx]:
+                    if any(k in str(attrs[rm_idx]).lower() for k in reno_keywords):
+                        is_renovated = True
 
-                age = max(0, current_year - installation_year)
+            # Check implicit material field (Fallback)
+            if not is_renovated and raw_material and isinstance(raw_material, str):
+                 if any(k in raw_material.lower() for k in reno_keywords):
+                     is_renovated = True
 
-                # Renovation Logic (Semantic Keyword Detection)
-                # Keywords: u-liner, strumpa, infodring, relining, renovering
-                reno_keywords = ['u-liner', 'strumpa', 'infodring', 'relining', 'renovering']
-                is_renovated = False
+            if is_renovated:
+                # Reset Age
+                if config.get('reno_year_field'):
+                    ry_idx = source_fields.indexFromName(config['reno_year_field'])
+                    if ry_idx != -1:
+                        ry_val = DataSanitizer.sanitize_year(attrs[ry_idx])
+                        if ry_val > 1900:
+                            age = max(0, current_year - ry_val)
+                # Swap Material Curve
+                material_for_calc = 'Plast'
 
-                # 1. Check Explicit Renovation Method Field
-                if config.get('reno_method_field'):
-                    reno_method_idx = fields.indexFromName(config['reno_method_field'])
-                    if reno_method_idx != -1:
-                        reno_method = attrs[reno_method_idx]
-                        if reno_method and isinstance(reno_method, str):
-                            if any(k in reno_method.lower() for k in reno_keywords):
-                                is_renovated = True
+            # --- Calculations ---
+            pof = calculation_logic.calculate_renewal_need(
+                layer_type, material_for_calc, age, install_year, dimension,
+                use_dimension_weighting, dimension_factor
+            )
 
-                # 2. Check Material Field (Implicit Renovation)
-                if not is_renovated and material and isinstance(material, str):
-                     if any(k in material.lower() for k in reno_keywords):
-                         is_renovated = True
+            cof = self.consequence_calc.calculate_score(feature, dimension)
 
-                # Apply Renovation Actions
-                if is_renovated:
-                    # Action A: Reset Age if valid reno_year exists
-                    if config.get('reno_year_field'):
-                        reno_year_idx = fields.indexFromName(config['reno_year_field'])
-                        if reno_year_idx != -1:
-                            raw_reno_year = attrs[reno_year_idx]
-                            reno_year = DataSanitizer.sanitize_year(raw_reno_year)
-                            if reno_year > 1900:
-                                age = max(0, current_year - reno_year)
+            length = feature.geometry().length() if feature.hasGeometry() else 0
+            risk_cost = self.economic_model.calculate_risk_cost(pof, cof, length, unit_cost)
+            risk_score = pof * cof
 
-                    # Action B: Material Swap (Liner = New Plastic Pipe)
-                    material = 'Plast'
+            # Create New Feature
+            new_feat = QgsFeature()
+            new_feat.setGeometry(feature.geometry())
 
-                # 3. Dimension (Sanitized)
-                raw_dimension = attrs[dimension_idx]
-                dimension = DataSanitizer.sanitize_dimension(raw_dimension)
+            # attributes = original + [pof, score, cost]
+            new_attrs = list(attrs) + [pof, risk_score, risk_cost]
+            new_feat.setAttributes(new_attrs)
+            new_features.append(new_feat)
 
-                # --- END SANITIZATION ---
+            # High Risk Collection
+            if pof >= 0.5:
+                high_risk_results.append({
+                    'layer_name': mem_layer_name,
+                    'layer_id': mem_layer.id(), # Will be valid after add
+                    'feature_id': i, # Approx ID
+                    'material': raw_material,
+                    'age': age,
+                    'renewal_need': pof,
+                    'risk_score': risk_score,
+                    'risk_cost': risk_cost
+                })
 
-                # 1. PoF Calculation
-                renewal_need = calculation_logic.calculate_renewal_need(
-                    pipeline_type=layer_type,
-                    material=material,
-                    age=age,
-                    year=installation_year,
-                    dimension=dimension,
-                    use_dimension_weighting=use_dimension_weighting,
-                    dimension_factor=dimension_factor
-                )
+        # 3. Commit to Memory Layer
+        mem_pr.addFeatures(new_features)
+        mem_layer.updateExtents()
 
-                # 2. CoF Calculation
-                cof_score = self.consequence_calc.calculate_score(feature, dimension)
-
-                # 3. Risk Cost Calculation
-                length = 0.0
-                if feature.hasGeometry():
-                    length = feature.geometry().length()
-
-                risk_cost = self.economic_model.calculate_risk_cost(
-                    pof=renewal_need,
-                    consequence_score=cof_score,
-                    length=length,
-                    unit_cost=unit_cost
-                )
-
-                # 4. Combined Risk Score
-                risk_score = renewal_need * cof_score
-
-                # Update Attributes
-                layer.changeAttributeValue(feature.id(), output_idx, renewal_need)
-                layer.changeAttributeValue(feature.id(), risk_score_idx, risk_score)
-                layer.changeAttributeValue(feature.id(), risk_cost_idx, risk_cost)
-
-                # Collect High Risk
-                if renewal_need >= 0.5:
-                    high_risk_results.append({
-                        'layer_name': layer.name(),
-                        'layer_id': layer.id(),
-                        'feature_id': feature.id(),
-                        'material': material,
-                        'age': age,
-                        'renewal_need': renewal_need,
-                        'risk_score': risk_score,
-                        'risk_cost': risk_cost
-                    })
-
-            if layer.commitChanges():
-                processed_count = layer.featureCount()
-                if progress_callback:
-                    progress_callback(100)
-                return {
-                    'status': True,
-                    'count': processed_count,
-                    'high_risk_results': high_risk_results,
-                    'message': f"Beräkning klar för lagret '{layer.name()}'."
-                }
-            else:
-                layer.rollBack()
-                return {
-                    'status': False,
-                    'count': 0,
-                    'high_risk_results': [],
-                    'message': f"Kunde inte spara ändringar för lagret '{layer.name()}'."
-                }
-
-        except Exception as e:
-            layer.rollBack()
-            return {
-                'status': False,
-                'count': 0,
-                'high_risk_results': [],
-                'message': f"Ett oväntat fel inträffade: {str(e)}"
-            }
+        return {
+            'status': True,
+            'count': len(new_features),
+            'high_risk_results': high_risk_results,
+            'result_layer': mem_layer, # Return the object
+            'message': f"Analys klar. Skapade lager: {mem_layer_name}"
+        }
