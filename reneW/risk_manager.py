@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime
-from qgis.core import QgsField, QgsVectorLayer, QgsFeature, QgsGeometry
+from qgis.core import QgsField, QgsVectorLayer, QgsFeature, QgsGeometry, QgsSpatialIndex, QgsPointXY
 from qgis.PyQt.QtCore import QVariant
 from . import calculation_logic
 from .utils import ParameterLoader, DataSanitizer
@@ -9,29 +9,28 @@ from .strategic_models import ConsequenceCalculator, EconomicModel
 class RiskManager:
     """
     Manages the risk analysis workflow.
-    UPDATED v2.1: Integrated Advanced Cost Engine.
+    UPDATED v2.2: Integrated Advanced Cost Engine with Spatial Depth Calculation.
     """
 
     def __init__(self):
         self.consequence_calc = ConsequenceCalculator()
         self.economic_model = EconomicModel()
-        # unit_costs kept for legacy, but economic_model now handles detailed cost
         self.unit_costs = ParameterLoader.get_unit_costs()
 
     def execute_analysis(self, layer, config, use_dimension_weighting, dimension_factor, progress_callback=None):
         """
         Executes analysis creating a NEW memory layer (Non-destructive).
+        Includes Spatial Depth Calculation via Nearest Node.
         """
         layer_type = config['type']
 
-        # EXTRACT COST PARAMETERS FROM CONFIG (Passed from UI)
+        # Cost Parameters from Config
         cost_depth_std = config.get('cost_depth', 2.5)
         cost_slope = config.get('cost_slope', 1.0)
         cost_trench_box = config.get('cost_trench_box', False)
         cost_include_asphalt = config.get('cost_include_asphalt', True)
         cost_exc_price = config.get('cost_excavation_price', 350.0)
 
-        # Override slope if Trench Box is active
         if cost_trench_box:
             cost_slope = 0.0
 
@@ -60,8 +59,7 @@ class RiskManager:
             dim_idx = source_fields.indexFromName(config['dimension_field'])
         except KeyError: return {'status': False, 'message': "Missing required fields."}
 
-        # Try to find depth fields (Z-levels)
-        # Simple heuristic: look for 'vg_start', 'mark_start' etc.
+        # Helper to find attribute indices
         def find_idx(names):
             for n in names:
                 idx = source_fields.indexFromName(n)
@@ -72,6 +70,26 @@ class RiskManager:
         vg_end_idx = find_idx(['vg_slut', 'VG_SLUT', 'z2', 'Z2'])
         mark_start_idx = find_idx(['mark_start', 'MARK_START', 'mz1', 'MZ1'])
         mark_end_idx = find_idx(['mark_slut', 'MARK_SLUT', 'mz2', 'MZ2'])
+
+        # --- Pre-processing: Spatial Index for Nodes ---
+        node_layer = config.get('node_layer')
+        node_ground_field = config.get('node_ground_field')
+        node_index = None
+        node_z_cache = {}
+
+        if node_layer and node_ground_field:
+            node_idx_ground = node_layer.fields().indexFromName(node_ground_field)
+            if node_idx_ground != -1:
+                # Build Spatial Index
+                node_index = QgsSpatialIndex(node_layer.getFeatures())
+                # Cache Ground Levels
+                for f in node_layer.getFeatures():
+                    try:
+                        val = f.attributes()[node_idx_ground]
+                        if val is not None:
+                            node_z_cache[f.id()] = float(val)
+                    except (ValueError, TypeError):
+                        pass
 
         current_year = datetime.now().year
         high_risk_results = []
@@ -91,15 +109,75 @@ class RiskManager:
             dimension = DataSanitizer.sanitize_dimension(raw_dim)
 
             # --- Depth Logic ---
-            # Calculate feature-specific depth if fields exist
             calc_depth = cost_depth_std
-            if all(idx != -1 for idx in [vg_start_idx, vg_end_idx, mark_start_idx, mark_end_idx]):
-                try:
-                    vg_avg = (float(attrs[vg_start_idx]) + float(attrs[vg_end_idx])) / 2.0
-                    mark_avg = (float(attrs[mark_start_idx]) + float(attrs[mark_end_idx])) / 2.0
-                    d = mark_avg - vg_avg
-                    if d > 0: calc_depth = d
-                except: pass # Fallback to std
+            spatial_depth_found = False
+
+            # 1. Spatial Node Lookup (Priority)
+            # Requires Node Index AND Invert Levels on Pipe
+            if node_index and vg_start_idx != -1 and vg_end_idx != -1 and feature.hasGeometry():
+                geom = feature.geometry()
+
+                # Extract Polyline
+                line = None
+                if geom.isMultipart():
+                    lines = geom.asMultiPolyline()
+                    if lines: line = lines[0]
+                else:
+                    line = geom.asPolyline()
+
+                if line:
+                    p_start = line[0] # Start Point
+                    p_end = line[-1]  # End Point
+
+                    # Find Nearest Nodes
+                    n_start_ids = node_index.nearestNeighbor(QgsPointXY(p_start), 1)
+                    n_end_ids = node_index.nearestNeighbor(QgsPointXY(p_end), 1)
+
+                    z_start = None
+                    z_end = None
+
+                    # Check Start Node (Tolerance 0.1m)
+                    if n_start_ids:
+                        nid = n_start_ids[0]
+                        # Need to verify distance strictly? nearestNeighbor gives closest ID.
+                        # Fetching geometry adds overhead but is required for tolerance check.
+                        n_feat = node_layer.getFeature(nid)
+                        if n_feat.hasGeometry():
+                            dist = n_feat.geometry().distance(QgsGeometry.fromPointXY(QgsPointXY(p_start)))
+                            if dist <= 0.1:
+                                z_start = node_z_cache.get(nid)
+
+                    # Check End Node
+                    if n_end_ids:
+                        nid = n_end_ids[0]
+                        n_feat = node_layer.getFeature(nid)
+                        if n_feat.hasGeometry():
+                            dist = n_feat.geometry().distance(QgsGeometry.fromPointXY(QgsPointXY(p_end)))
+                            if dist <= 0.1:
+                                z_end = node_z_cache.get(nid)
+
+                    # Calculate Depth if both Z found
+                    if z_start is not None and z_end is not None:
+                        try:
+                            vg_s = float(attrs[vg_start_idx])
+                            vg_e = float(attrs[vg_end_idx])
+                            d_s = z_start - vg_s
+                            d_e = z_end - vg_e
+                            if d_s > 0 and d_e > 0:
+                                calc_depth = (d_s + d_e) / 2.0
+                                spatial_depth_found = True
+                        except (ValueError, TypeError):
+                            pass
+
+            # 2. Attribute Fallback (If spatial failed)
+            if not spatial_depth_found:
+                if all(idx != -1 for idx in [vg_start_idx, vg_end_idx, mark_start_idx, mark_end_idx]):
+                    try:
+                        vg_avg = (float(attrs[vg_start_idx]) + float(attrs[vg_end_idx])) / 2.0
+                        mark_avg = (float(attrs[mark_start_idx]) + float(attrs[mark_end_idx])) / 2.0
+                        d = mark_avg - vg_avg
+                        if d > 0: calc_depth = d
+                    except: pass # Fallback to std
 
             # --- Smart Renovation Logic ---
             reno_keywords = ['u-liner', 'strumpa', 'infodring', 'relining', 'renovering']
