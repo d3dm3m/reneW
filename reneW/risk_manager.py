@@ -102,19 +102,38 @@ class RiskManager:
 
                 age = max(0, current_year - installation_year)
 
-                # Renovation Logic (Optional override)
-                if config.get('reno_method_field') and config.get('reno_year_field'):
-                    reno_method_idx = fields.indexFromName(config['reno_method_field'])
-                    reno_year_idx = fields.indexFromName(config['reno_year_field'])
+                # Renovation Logic (Semantic Keyword Detection)
+                # Keywords: u-liner, strumpa, infodring, relining, renovering
+                reno_keywords = ['u-liner', 'strumpa', 'infodring', 'relining', 'renovering']
+                is_renovated = False
 
-                    if reno_method_idx != -1 and reno_year_idx != -1:
+                # 1. Check Explicit Renovation Method Field
+                if config.get('reno_method_field'):
+                    reno_method_idx = fields.indexFromName(config['reno_method_field'])
+                    if reno_method_idx != -1:
                         reno_method = attrs[reno_method_idx]
                         if reno_method and isinstance(reno_method, str):
-                            if 'infodring' in reno_method.lower() or 'strumpa' in reno_method.lower():
-                                # Also sanitize renovation year if found
-                                raw_reno_year = attrs[reno_year_idx]
-                                reno_year = DataSanitizer.sanitize_year(raw_reno_year)
+                            if any(k in reno_method.lower() for k in reno_keywords):
+                                is_renovated = True
+
+                # 2. Check Material Field (Implicit Renovation)
+                if not is_renovated and material and isinstance(material, str):
+                     if any(k in material.lower() for k in reno_keywords):
+                         is_renovated = True
+
+                # Apply Renovation Actions
+                if is_renovated:
+                    # Action A: Reset Age if valid reno_year exists
+                    if config.get('reno_year_field'):
+                        reno_year_idx = fields.indexFromName(config['reno_year_field'])
+                        if reno_year_idx != -1:
+                            raw_reno_year = attrs[reno_year_idx]
+                            reno_year = DataSanitizer.sanitize_year(raw_reno_year)
+                            if reno_year > 1900:
                                 age = max(0, current_year - reno_year)
+
+                    # Action B: Material Swap (Liner = New Plastic Pipe)
+                    material = 'Plast'
 
                 # 3. Dimension (Sanitized)
                 raw_dimension = attrs[dimension_idx]
