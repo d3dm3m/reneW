@@ -296,6 +296,39 @@
         </widget>
        </item>
        <item>
+        <widget class="QGroupBox" name="mGroupNode">
+         <property name="title">
+          <string>Höjddata från Brunnar/Punkter (Valfritt)</string>
+         </property>
+         <layout class="QGridLayout" name="gridLayout_node">
+          <item row="0" column="0">
+           <widget class="QLabel" name="label_node_layer">
+            <property name="text">
+             <string>Välj Brunnslager:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QgsMapLayerComboBox" name="mMapLayerComboNodes">
+            <property name="filters">
+             <set>QgsMapLayerProxyModel::PointLayer</set>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="label_ground_field">
+            <property name="text">
+             <string>Fält för Marknivå:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QgsFieldComboBox" name="mFieldComboGroundLevel"/>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
         <spacer name="verticalSpacer_cost">
          <property name="orientation">
           <enum>Qt::Vertical</enum>

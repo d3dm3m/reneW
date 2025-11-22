@@ -40,6 +40,10 @@ class ReneWDialog(QDialog, FORM_CLASS):
         # --- Tab 3: Cost Parameters ---
         self.mCheckTrenchBox.toggled.connect(self._toggle_trench_box)
 
+        # New Node Layer Controls
+        self.mMapLayerComboNodes.setFilters(QgsMapLayerProxyModel.PointLayer)
+        self.mMapLayerComboNodes.layerChanged.connect(self.mFieldComboGroundLevel.setLayer)
+
     def _toggle_trench_box(self, checked):
         # If trench box is used, slope implies vertical walls (0 slope or undefined, but typically width is constant)
         # Here we can disable slope or set it to 0.
@@ -94,7 +98,11 @@ class ReneWDialog(QDialog, FORM_CLASS):
                 'cost_slope': self.getSlope(),
                 'cost_trench_box': self.useTrenchBox(),
                 'cost_include_asphalt': self.includeAsphalt(),
-                'cost_excavation_price': self.getExcavationPrice()
+                'cost_excavation_price': self.getExcavationPrice(),
+
+                # Node Layer Config (Optional)
+                'node_layer': self.mMapLayerComboNodes.currentLayer(),
+                'node_ground_field': self.mFieldComboGroundLevel.currentField()
             })
 
         return configs
@@ -147,6 +155,10 @@ class ReneWDialog(QDialog, FORM_CLASS):
         project.writeEntry('reneW', 'costIncludeAsphalt', self.includeAsphalt())
         project.writeEntryDouble('reneW', 'costExcavationPrice', self.getExcavationPrice())
 
+        if self.mMapLayerComboNodes.currentLayer():
+            project.writeEntry('reneW', 'nodeLayer', self.mMapLayerComboNodes.currentLayer().id())
+        project.writeEntry('reneW', 'nodeGroundField', self.mFieldComboGroundLevel.currentField())
+
         # Tab 2
         if self.mMapLayerComboVattenHotspot.currentLayer():
             project.writeEntry('reneW', 'hotspotLayerVatten', self.mMapLayerComboVattenHotspot.currentLayer().id())
@@ -192,6 +204,13 @@ class ReneWDialog(QDialog, FORM_CLASS):
         self.mCheckTrenchBox.setChecked(project.readBoolEntry('reneW', 'costTrenchBox', False)[0])
         self.mCheckAsphalt.setChecked(project.readBoolEntry('reneW', 'costIncludeAsphalt', True)[0])
         self.mSpinBoxExcavationPrice.setValue(project.readDoubleEntry('reneW', 'costExcavationPrice', 350.0)[0])
+
+        node_lid = project.readEntry('reneW', 'nodeLayer', '')[0]
+        if node_lid:
+            nl = QgsProject.instance().mapLayer(node_lid)
+            if nl:
+                self.mMapLayerComboNodes.setLayer(nl)
+        self.mFieldComboGroundLevel.setField(project.readEntry('reneW', 'nodeGroundField', '')[0])
 
         # Tab 2
         def set_layer(combo, key):
