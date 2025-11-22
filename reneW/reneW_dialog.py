@@ -24,26 +24,28 @@ class ReneWDialog(QDialog, FORM_CLASS):
         self.mMapLayerCombo.layerChanged.connect(self.mFieldComboRenoYear.setLayer)
         self.mMapLayerCombo.layerChanged.connect(self.mFieldComboRenoMethod.setLayer)
 
-        # --- Tab 2: Coordination & Hotspots ---
+        # --- Tab 2: Samordning & Hotspots ---
         # Filters
         self.mMapLayerComboVattenHotspot.setFilters(QgsMapLayerProxyModel.VectorLayer)
         self.mMapLayerComboSpillHotspot.setFilters(QgsMapLayerProxyModel.VectorLayer)
         self.mMapLayerComboDagHotspot.setFilters(QgsMapLayerProxyModel.VectorLayer)
 
-        # Hotspot Checkbox logic removed in UI redesign (always available in Tab 2)
-        # But if we kept the checkbox 'mCheckHotspot' inside 'mGroupHotspot', logic applies.
-        # In the new UI XML, mCheckHotspot was reused/moved?
-        # Checking UI: <widget class="QCheckBox" name="mCheckHotspot"> inside mGroupHotspot in Tab Risk?
-        # Wait, my plan said "Remove mGroupHotspot from Tab 1". "Add Hotspot settings to Tab 2".
-        # The XML shows mGroupHotspot in Tab 2 (Samordning).
-        # But I kept mCheckHotspot in the XML? Yes.
-        # So let's keep the toggling logic if the checkbox exists.
+        # Hotspot Checkbox logic
         if hasattr(self, 'mCheckHotspot'):
              self.mCheckHotspot.toggled.connect(self.mSpinBoxHotspotThreshold.setEnabled)
              self.mCheckHotspot.toggled.connect(self.mSpinBoxHotspotDistance.setEnabled)
              self.mSpinBoxHotspotThreshold.setEnabled(False)
              self.mSpinBoxHotspotDistance.setEnabled(False)
 
+        # --- Tab 3: Cost Parameters ---
+        self.mCheckTrenchBox.toggled.connect(self._toggle_trench_box)
+
+    def _toggle_trench_box(self, checked):
+        # If trench box is used, slope implies vertical walls (0 slope or undefined, but typically width is constant)
+        # Here we can disable slope or set it to 0.
+        self.mSpinBoxSlope.setEnabled(not checked)
+        if checked:
+             self.mSpinBoxSlope.setValue(0.0)
 
     # --- Getter methods for global settings ---
     def useDimensionWeighting(self) -> bool:
@@ -52,10 +54,27 @@ class ReneWDialog(QDialog, FORM_CLASS):
     def dimensionFactor(self) -> float:
         return self.mSpinBoxDimensionFactor.value()
 
+    # --- Cost Parameter Getters ---
+    def getStandardDepth(self) -> float:
+        return self.mSpinBoxStandardDepth.value()
+
+    def getSlope(self) -> float:
+        return self.mSpinBoxSlope.value()
+
+    def useTrenchBox(self) -> bool:
+        return self.mCheckTrenchBox.isChecked()
+
+    def includeAsphalt(self) -> bool:
+        return self.mCheckAsphalt.isChecked()
+
+    def getExcavationPrice(self) -> float:
+        return self.mSpinBoxExcavationPrice.value()
+
     # --- Getter for Risk Calculation (Tab 1) ---
     def get_analysis_configs(self) -> list:
         """
-        Returns a list containing the single configuration for the selected layer.
+        Returns a list containing the single configuration for the selected layer,
+        PLUS the cost parameters merged into the config dictionary.
         """
         configs = []
 
@@ -68,7 +87,14 @@ class ReneWDialog(QDialog, FORM_CLASS):
                 'year_field': self.mFieldComboYear.currentField(),
                 'dimension_field': self.mFieldComboDimension.currentField(),
                 'reno_year_field': self.mFieldComboRenoYear.currentField(),
-                'reno_method_field': self.mFieldComboRenoMethod.currentField()
+                'reno_method_field': self.mFieldComboRenoMethod.currentField(),
+
+                # Cost Parameters
+                'cost_depth': self.getStandardDepth(),
+                'cost_slope': self.getSlope(),
+                'cost_trench_box': self.useTrenchBox(),
+                'cost_include_asphalt': self.includeAsphalt(),
+                'cost_excavation_price': self.getExcavationPrice()
             })
 
         return configs
@@ -114,6 +140,13 @@ class ReneWDialog(QDialog, FORM_CLASS):
         project.writeEntry('reneW', 'dimensionWeightingEnabled', self.useDimensionWeighting())
         project.writeEntryDouble('reneW', 'dimensionFactor', self.dimensionFactor())
 
+        # Tab 3 Cost
+        project.writeEntryDouble('reneW', 'costStandardDepth', self.getStandardDepth())
+        project.writeEntryDouble('reneW', 'costSlope', self.getSlope())
+        project.writeEntry('reneW', 'costTrenchBox', self.useTrenchBox())
+        project.writeEntry('reneW', 'costIncludeAsphalt', self.includeAsphalt())
+        project.writeEntryDouble('reneW', 'costExcavationPrice', self.getExcavationPrice())
+
         # Tab 2
         if self.mMapLayerComboVattenHotspot.currentLayer():
             project.writeEntry('reneW', 'hotspotLayerVatten', self.mMapLayerComboVattenHotspot.currentLayer().id())
@@ -152,6 +185,13 @@ class ReneWDialog(QDialog, FORM_CLASS):
 
         self.mCheckBoxEnableDimensionWeighting.setChecked(project.readBoolEntry('reneW', 'dimensionWeightingEnabled', False)[0])
         self.mSpinBoxDimensionFactor.setValue(project.readDoubleEntry('reneW', 'dimensionFactor', 0.001)[0])
+
+        # Tab 3 Cost
+        self.mSpinBoxStandardDepth.setValue(project.readDoubleEntry('reneW', 'costStandardDepth', 2.5)[0])
+        self.mSpinBoxSlope.setValue(project.readDoubleEntry('reneW', 'costSlope', 1.0)[0])
+        self.mCheckTrenchBox.setChecked(project.readBoolEntry('reneW', 'costTrenchBox', False)[0])
+        self.mCheckAsphalt.setChecked(project.readBoolEntry('reneW', 'costIncludeAsphalt', True)[0])
+        self.mSpinBoxExcavationPrice.setValue(project.readDoubleEntry('reneW', 'costExcavationPrice', 350.0)[0])
 
         # Tab 2
         def set_layer(combo, key):

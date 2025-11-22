@@ -59,17 +59,21 @@ class EconomicModel:
 
         return volume, top_width
 
-    def calculate_advanced_cost(self, pipeline_type, length, dimension):
+    def calculate_advanced_cost(self, pipeline_type, length, dimension, depth=None, slope=None, include_asphalt=None, excavation_price=None):
         """
         Calculates total replacement cost using parametric inputs.
+        Overrides defaults if specific parameters are provided.
         """
-        depth = self.trench.get('depth', 2.5)
-        slope = self.trench.get('slope_ratio', 1.0)
+        # Use provided values or defaults
+        depth = depth if depth is not None else self.trench.get('depth', 2.5)
+        slope = slope if slope is not None else self.trench.get('slope_ratio', 1.0)
+        include_asphalt = include_asphalt if include_asphalt is not None else self.trench.get('include_asphalt', True)
+        exc_price = excavation_price if excavation_price is not None else self.prices.get('excavation_m3', 350)
 
         # 1. Excavation & Filling
         excavation_vol, top_width = self.calculate_trench_volume(length, depth, dimension, slope)
-        excavation_cost = excavation_vol * self.prices.get('excavation_m3', 350)
-        filling_cost = excavation_vol * self.prices.get('filling_m3', 250) # Simplified: Assume filling = excavation volume
+        excavation_cost = excavation_vol * exc_price
+        filling_cost = excavation_vol * self.prices.get('filling_m3', 250)
 
         # 2. Pipe Material
         pipe_price = self.prices.get('pipe_material_per_m', {}).get(pipeline_type, 800)
@@ -77,7 +81,7 @@ class EconomicModel:
 
         # 3. Surface Restoration
         surface_cost = 0.0
-        if self.trench.get('include_asphalt', True):
+        if include_asphalt:
             extra_width = self.trench.get('restoration_width_extra', 1.0)
             surface_area = (top_width + extra_width) * length
             surface_cost = surface_area * self.prices.get('asphalt_m2', 400)
@@ -85,18 +89,11 @@ class EconomicModel:
         total_cost = excavation_cost + filling_cost + pipe_cost + surface_cost
         return total_cost
 
-    def calculate_risk_cost(self, pof, consequence_score, length, unit_cost_deprecated=None, pipeline_type="Vatten", dimension=150):
+    def calculate_risk_cost(self, pof, consequence_score, length, unit_cost_deprecated=None, pipeline_type="Vatten", dimension=150, **kwargs):
         """
         Estimates the Expected Annual Cost of risk using the advanced model.
-
-        Note: unit_cost_deprecated is kept for backward compatibility signatures
-        but ignored in favor of advanced calculation.
+        Accepts optional kwargs for trench parameters.
         """
-        total_replacement_cost = self.calculate_advanced_cost(pipeline_type, length, dimension)
-
-        # Risk Cost = PoF * CoF_Score * Replacement_Cost
-        # Note: In the previous model, CoF was a multiplier on top of length*unit_cost.
-        # Here, total_replacement_cost is the base financial impact.
-        # CoF score is a dimensionless multiplier representing SOCIAL/strategic impact.
+        total_replacement_cost = self.calculate_advanced_cost(pipeline_type, length, dimension, **kwargs)
 
         return pof * consequence_score * total_replacement_cost

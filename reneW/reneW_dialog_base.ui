@@ -212,6 +212,105 @@
       </layout>
      </widget>
 
+     <!-- Tab 3: Kostnadsparametrar -->
+     <widget class="QWidget" name="tabCost">
+      <attribute name="title">
+       <string>Kostnadsparametrar</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="verticalLayout_cost">
+       <item>
+        <widget class="QGroupBox" name="mGroupCost">
+         <property name="title">
+          <string>Schakt och återställning</string>
+         </property>
+         <layout class="QGridLayout" name="gridLayout_cost">
+          <item row="0" column="0">
+           <widget class="QLabel" name="label_depth">
+            <property name="text">
+             <string>Standarddjup (m):</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QDoubleSpinBox" name="mSpinBoxStandardDepth">
+            <property name="value">
+             <double>2.5</double>
+            </property>
+            <property name="singleStep">
+             <double>0.1</double>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="label_slope">
+            <property name="text">
+             <string>Schaktvinkel (1:X):</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QDoubleSpinBox" name="mSpinBoxSlope">
+            <property name="value">
+             <double>1.0</double>
+            </property>
+            <property name="singleStep">
+             <double>0.1</double>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="0" colspan="2">
+           <widget class="QCheckBox" name="mCheckTrenchBox">
+            <property name="text">
+             <string>Använd Schaktbox (Smalgata)</string>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="0" colspan="2">
+           <widget class="QCheckBox" name="mCheckAsphalt">
+            <property name="text">
+             <string>Inkludera Asfaltering</string>
+            </property>
+            <property name="checked">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="0">
+           <widget class="QLabel" name="label_exc_price">
+            <property name="text">
+             <string>Enhetspris Schakt (kr/m3) [Tillval]:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="1">
+           <widget class="QDoubleSpinBox" name="mSpinBoxExcavationPrice">
+             <property name="maximum">
+              <double>10000.0</double>
+             </property>
+            <property name="value">
+             <double>350.0</double>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <spacer name="verticalSpacer_cost">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+
      <!-- Tab 2: Samordning & Hotspots -->
      <widget class="QWidget" name="tabHotspot">
       <attribute name="title">
