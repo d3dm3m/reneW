@@ -112,7 +112,7 @@ class ReneWDialog(QDialog, FORM_CLASS):
         project.writeEntry('reneW', 'renoMethodField', self.mFieldComboRenoMethod.currentField())
 
         project.writeEntry('reneW', 'dimensionWeightingEnabled', self.useDimensionWeighting())
-        project.writeEntry('reneW', 'dimensionFactor', self.dimensionFactor())
+        project.writeEntryDouble('reneW', 'dimensionFactor', self.dimensionFactor())
 
         # Tab 2
         if self.mMapLayerComboVattenHotspot.currentLayer():
@@ -125,8 +125,8 @@ class ReneWDialog(QDialog, FORM_CLASS):
         if hasattr(self, 'mCheckHotspot'):
             project.writeEntry('reneW', 'hotspotEnabled', self.isHotspotAnalysisEnabled())
 
-        project.writeEntry('reneW', 'hotspotThreshold', self.getHotspotThreshold())
-        project.writeEntry('reneW', 'hotspotDistance', self.getHotspotDistance())
+        project.writeEntryDouble('reneW', 'hotspotThreshold', self.getHotspotThreshold())
+        project.writeEntryDouble('reneW', 'hotspotDistance', self.getHotspotDistance())
 
     def load_settings(self):
         """Loads the dialog's settings from the current QGIS project."""
