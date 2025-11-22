@@ -20,8 +20,7 @@ from qgis.core import (
     QgsRendererCategory,
     QgsSymbol,
     QgsRendererRange,
-    QgsStyle,
-    QgsBlurEffect
+    QgsStyle
 )
 
 from .reneW_dialog import ReneWDialog
@@ -97,7 +96,7 @@ class ReneW:
 
         if result:
             self.dlg.save_settings()
-            # Only run calculation if we are on the Risk tab
+            # Only run calculation if we are on the Risk tab (Index 0)
             if self.dlg.mTabWidget.currentIndex() == 0:
                 self._run_single_layer_analysis()
 
@@ -187,7 +186,6 @@ class ReneW:
 
             raw_geoms = []
             for f in layer.getFeatures():
-                # Ensure we check for NULL and Threshold
                 if f[idx] is not None and f[idx] >= threshold and f.hasGeometry():
                     raw_geoms.append(f.geometry())
 
