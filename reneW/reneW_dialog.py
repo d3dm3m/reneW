@@ -16,41 +16,33 @@ class ReneWDialog(QDialog, FORM_CLASS):
         # --- Global Settings ---
         self.mCheckBoxEnableDimensionWeighting.toggled.connect(self.mSpinBoxDimensionFactor.setEnabled)
 
-        # --- Vatten Tab ---
-        self.mCheckVatten.toggled.connect(self.mGroupVatten.setEnabled)
-        self.mMapLayerComboVatten.setFilters(QgsMapLayerProxyModel.VectorLayer)
-        self.mMapLayerComboVatten.layerChanged.connect(self.mFieldComboMaterialVatten.setLayer)
-        self.mMapLayerComboVatten.layerChanged.connect(self.mFieldComboYearVatten.setLayer)
-        self.mMapLayerComboVatten.layerChanged.connect(self.mFieldComboDimensionVatten.setLayer)
-        self.mMapLayerComboVatten.layerChanged.connect(self.mFieldComboRenoYearVatten.setLayer)
-        self.mMapLayerComboVatten.layerChanged.connect(self.mFieldComboRenoMethodVatten.setLayer)
-        self.mGroupVatten.setEnabled(False)
+        # --- Tab 1: Risk Calculation (Single Layer) ---
+        self.mMapLayerCombo.setFilters(QgsMapLayerProxyModel.VectorLayer)
+        self.mMapLayerCombo.layerChanged.connect(self.mFieldComboMaterial.setLayer)
+        self.mMapLayerCombo.layerChanged.connect(self.mFieldComboYear.setLayer)
+        self.mMapLayerCombo.layerChanged.connect(self.mFieldComboDimension.setLayer)
+        self.mMapLayerCombo.layerChanged.connect(self.mFieldComboRenoYear.setLayer)
+        self.mMapLayerCombo.layerChanged.connect(self.mFieldComboRenoMethod.setLayer)
 
-        # --- Spillvatten Tab ---
-        self.mCheckSpillvatten.toggled.connect(self.mGroupSpillvatten.setEnabled)
-        self.mMapLayerComboSpillvatten.setFilters(QgsMapLayerProxyModel.VectorLayer)
-        self.mMapLayerComboSpillvatten.layerChanged.connect(self.mFieldComboMaterialSpillvatten.setLayer)
-        self.mMapLayerComboSpillvatten.layerChanged.connect(self.mFieldComboYearSpillvatten.setLayer)
-        self.mMapLayerComboSpillvatten.layerChanged.connect(self.mFieldComboDimensionSpillvatten.setLayer)
-        self.mMapLayerComboSpillvatten.layerChanged.connect(self.mFieldComboRenoYearSpillvatten.setLayer)
-        self.mMapLayerComboSpillvatten.layerChanged.connect(self.mFieldComboRenoMethodSpillvatten.setLayer)
-        self.mGroupSpillvatten.setEnabled(False)
+        # --- Tab 2: Coordination & Hotspots ---
+        # Filters
+        self.mMapLayerComboVattenHotspot.setFilters(QgsMapLayerProxyModel.VectorLayer)
+        self.mMapLayerComboSpillHotspot.setFilters(QgsMapLayerProxyModel.VectorLayer)
+        self.mMapLayerComboDagHotspot.setFilters(QgsMapLayerProxyModel.VectorLayer)
 
-        # --- Dagvatten Tab ---
-        self.mCheckDagvatten.toggled.connect(self.mGroupDagvatten.setEnabled)
-        self.mMapLayerComboDagvatten.setFilters(QgsMapLayerProxyModel.VectorLayer)
-        self.mMapLayerComboDagvatten.layerChanged.connect(self.mFieldComboMaterialDagvatten.setLayer)
-        self.mMapLayerComboDagvatten.layerChanged.connect(self.mFieldComboYearDagvatten.setLayer)
-        self.mMapLayerComboDagvatten.layerChanged.connect(self.mFieldComboDimensionDagvatten.setLayer)
-        self.mMapLayerComboDagvatten.layerChanged.connect(self.mFieldComboRenoYearDagvatten.setLayer)
-        self.mMapLayerComboDagvatten.layerChanged.connect(self.mFieldComboRenoMethodDagvatten.setLayer)
-        self.mGroupDagvatten.setEnabled(False)
-
-        # --- Hotspot Analysis Settings ---
-        self.mCheckHotspot.toggled.connect(self.mSpinBoxHotspotThreshold.setEnabled)
-        self.mCheckHotspot.toggled.connect(self.mSpinBoxHotspotDistance.setEnabled)
-        self.mSpinBoxHotspotThreshold.setEnabled(False)
-        self.mSpinBoxHotspotDistance.setEnabled(False)
+        # Hotspot Checkbox logic removed in UI redesign (always available in Tab 2)
+        # But if we kept the checkbox 'mCheckHotspot' inside 'mGroupHotspot', logic applies.
+        # In the new UI XML, mCheckHotspot was reused/moved?
+        # Checking UI: <widget class="QCheckBox" name="mCheckHotspot"> inside mGroupHotspot in Tab Risk?
+        # Wait, my plan said "Remove mGroupHotspot from Tab 1". "Add Hotspot settings to Tab 2".
+        # The XML shows mGroupHotspot in Tab 2 (Samordning).
+        # But I kept mCheckHotspot in the XML? Yes.
+        # So let's keep the toggling logic if the checkbox exists.
+        if hasattr(self, 'mCheckHotspot'):
+             self.mCheckHotspot.toggled.connect(self.mSpinBoxHotspotThreshold.setEnabled)
+             self.mCheckHotspot.toggled.connect(self.mSpinBoxHotspotDistance.setEnabled)
+             self.mSpinBoxHotspotThreshold.setEnabled(False)
+             self.mSpinBoxHotspotDistance.setEnabled(False)
 
 
     # --- Getter methods for global settings ---
@@ -60,52 +52,44 @@ class ReneWDialog(QDialog, FORM_CLASS):
     def dimensionFactor(self) -> float:
         return self.mSpinBoxDimensionFactor.value()
 
-    # --- Getter for all selected configurations ---
+    # --- Getter for Risk Calculation (Tab 1) ---
     def get_analysis_configs(self) -> list:
         """
-        Returns a list of configurations for all layers selected for analysis.
-        Each configuration is a dictionary.
+        Returns a list containing the single configuration for the selected layer.
         """
         configs = []
 
-        if self.mCheckVatten.isChecked() and self.mMapLayerComboVatten.currentLayer():
+        current_layer = self.mMapLayerCombo.currentLayer()
+        if current_layer:
             configs.append({
-                'type': 'Vatten',
-                'layer': self.mMapLayerComboVatten.currentLayer(),
-                'material_field': self.mFieldComboMaterialVatten.currentField(),
-                'year_field': self.mFieldComboYearVatten.currentField(),
-                'dimension_field': self.mFieldComboDimensionVatten.currentField(),
-                'reno_year_field': self.mFieldComboRenoYearVatten.currentField(),
-                'reno_method_field': self.mFieldComboRenoMethodVatten.currentField()
-            })
-
-        if self.mCheckSpillvatten.isChecked() and self.mMapLayerComboSpillvatten.currentLayer():
-            configs.append({
-                'type': 'Spillvatten',
-                'layer': self.mMapLayerComboSpillvatten.currentLayer(),
-                'material_field': self.mFieldComboMaterialSpillvatten.currentField(),
-                'year_field': self.mFieldComboYearSpillvatten.currentField(),
-                'dimension_field': self.mFieldComboDimensionSpillvatten.currentField(),
-                'reno_year_field': self.mFieldComboRenoYearSpillvatten.currentField(),
-                'reno_method_field': self.mFieldComboRenoMethodSpillvatten.currentField()
-            })
-
-        if self.mCheckDagvatten.isChecked() and self.mMapLayerComboDagvatten.currentLayer():
-            configs.append({
-                'type': 'Dagvatten',
-                'layer': self.mMapLayerComboDagvatten.currentLayer(),
-                'material_field': self.mFieldComboMaterialDagvatten.currentField(),
-                'year_field': self.mFieldComboYearDagvatten.currentField(),
-                'dimension_field': self.mFieldComboDimensionDagvatten.currentField(),
-                'reno_year_field': self.mFieldComboRenoYearDagvatten.currentField(),
-                'reno_method_field': self.mFieldComboRenoMethodDagvatten.currentField()
+                'type': self.mComboSystemType.currentText(),
+                'layer': current_layer,
+                'material_field': self.mFieldComboMaterial.currentField(),
+                'year_field': self.mFieldComboYear.currentField(),
+                'dimension_field': self.mFieldComboDimension.currentField(),
+                'reno_year_field': self.mFieldComboRenoYear.currentField(),
+                'reno_method_field': self.mFieldComboRenoMethod.currentField()
             })
 
         return configs
 
+    # --- Getter for Hotspot Layers (Tab 2) ---
+    def get_hotspot_layers(self) -> dict:
+        """
+        Returns a dictionary of selected layers for coordination analysis.
+        """
+        return {
+            'Vatten': self.mMapLayerComboVattenHotspot.currentLayer(),
+            'Spillvatten': self.mMapLayerComboSpillHotspot.currentLayer(),
+            'Dagvatten': self.mMapLayerComboDagHotspot.currentLayer()
+        }
+
     # --- Getter methods for hotspot settings ---
     def isHotspotAnalysisEnabled(self) -> bool:
-        return self.mCheckHotspot.isChecked()
+        # If checkbox exists, use it. Else assume enabled if user clicks the button.
+        if hasattr(self, 'mCheckHotspot'):
+            return self.mCheckHotspot.isChecked()
+        return True
 
     def getHotspotThreshold(self) -> float:
         return self.mSpinBoxHotspotThreshold.value()
@@ -117,42 +101,30 @@ class ReneWDialog(QDialog, FORM_CLASS):
         """Saves the dialog's settings to the current QGIS project."""
         project = QgsProject.instance()
 
-        # Vatten
-        project.writeEntry('reneW', 'vattenEnabled', self.mCheckVatten.isChecked())
-        if self.mMapLayerComboVatten.currentLayer():
-            project.writeEntry('reneW', 'vattenLayer', self.mMapLayerComboVatten.currentLayer().id())
-        project.writeEntry('reneW', 'vattenMaterialField', self.mFieldComboMaterialVatten.currentField())
-        project.writeEntry('reneW', 'vattenYearField', self.mFieldComboYearVatten.currentField())
-        project.writeEntry('reneW', 'vattenDimensionField', self.mFieldComboDimensionVatten.currentField())
-        project.writeEntry('reneW', 'vattenRenoYearField', self.mFieldComboRenoYearVatten.currentField())
-        project.writeEntry('reneW', 'vattenRenoMethodField', self.mFieldComboRenoMethodVatten.currentField())
+        # Tab 1
+        project.writeEntry('reneW', 'systemType', self.mComboSystemType.currentText())
+        if self.mMapLayerCombo.currentLayer():
+            project.writeEntry('reneW', 'selectedLayer', self.mMapLayerCombo.currentLayer().id())
+        project.writeEntry('reneW', 'materialField', self.mFieldComboMaterial.currentField())
+        project.writeEntry('reneW', 'yearField', self.mFieldComboYear.currentField())
+        project.writeEntry('reneW', 'dimensionField', self.mFieldComboDimension.currentField())
+        project.writeEntry('reneW', 'renoYearField', self.mFieldComboRenoYear.currentField())
+        project.writeEntry('reneW', 'renoMethodField', self.mFieldComboRenoMethod.currentField())
 
-        # Spillvatten
-        project.writeEntry('reneW', 'spillvattenEnabled', self.mCheckSpillvatten.isChecked())
-        if self.mMapLayerComboSpillvatten.currentLayer():
-            project.writeEntry('reneW', 'spillvattenLayer', self.mMapLayerComboSpillvatten.currentLayer().id())
-        project.writeEntry('reneW', 'spillvattenMaterialField', self.mFieldComboMaterialSpillvatten.currentField())
-        project.writeEntry('reneW', 'spillvattenYearField', self.mFieldComboYearSpillvatten.currentField())
-        project.writeEntry('reneW', 'spillvattenDimensionField', self.mFieldComboDimensionSpillvatten.currentField())
-        project.writeEntry('reneW', 'spillvattenRenoYearField', self.mFieldComboRenoYearSpillvatten.currentField())
-        project.writeEntry('reneW', 'spillvattenRenoMethodField', self.mFieldComboRenoMethodSpillvatten.currentField())
-
-        # Dagvatten
-        project.writeEntry('reneW', 'dagvattenEnabled', self.mCheckDagvatten.isChecked())
-        if self.mMapLayerComboDagvatten.currentLayer():
-            project.writeEntry('reneW', 'dagvattenLayer', self.mMapLayerComboDagvatten.currentLayer().id())
-        project.writeEntry('reneW', 'dagvattenMaterialField', self.mFieldComboMaterialDagvatten.currentField())
-        project.writeEntry('reneW', 'dagvattenYearField', self.mFieldComboYearDagvatten.currentField())
-        project.writeEntry('reneW', 'dagvattenDimensionField', self.mFieldComboDimensionDagvatten.currentField())
-        project.writeEntry('reneW', 'dagvattenRenoYearField', self.mFieldComboRenoYearDagvatten.currentField())
-        project.writeEntry('reneW', 'dagvattenRenoMethodField', self.mFieldComboRenoMethodDagvatten.currentField())
-
-        # Global settings
         project.writeEntry('reneW', 'dimensionWeightingEnabled', self.useDimensionWeighting())
         project.writeEntry('reneW', 'dimensionFactor', self.dimensionFactor())
 
-        # Hotspot settings
-        project.writeEntry('reneW', 'hotspotEnabled', self.isHotspotAnalysisEnabled())
+        # Tab 2
+        if self.mMapLayerComboVattenHotspot.currentLayer():
+            project.writeEntry('reneW', 'hotspotLayerVatten', self.mMapLayerComboVattenHotspot.currentLayer().id())
+        if self.mMapLayerComboSpillHotspot.currentLayer():
+            project.writeEntry('reneW', 'hotspotLayerSpill', self.mMapLayerComboSpillHotspot.currentLayer().id())
+        if self.mMapLayerComboDagHotspot.currentLayer():
+            project.writeEntry('reneW', 'hotspotLayerDag', self.mMapLayerComboDagHotspot.currentLayer().id())
+
+        if hasattr(self, 'mCheckHotspot'):
+            project.writeEntry('reneW', 'hotspotEnabled', self.isHotspotAnalysisEnabled())
+
         project.writeEntry('reneW', 'hotspotThreshold', self.getHotspotThreshold())
         project.writeEntry('reneW', 'hotspotDistance', self.getHotspotDistance())
 
@@ -160,44 +132,40 @@ class ReneWDialog(QDialog, FORM_CLASS):
         """Loads the dialog's settings from the current QGIS project."""
         project = QgsProject.instance()
 
-        def set_layer_if_exists(combo, layer_id):
-            if layer_id:
-                layer = QgsProject.instance().mapLayer(layer_id)
-                if layer:
-                    combo.setLayer(layer)
+        # Tab 1
+        system_type = project.readEntry('reneW', 'systemType', 'Vatten')[0]
+        index = self.mComboSystemType.findText(system_type)
+        if index >= 0:
+            self.mComboSystemType.setCurrentIndex(index)
 
-        # Vatten
-        self.mCheckVatten.setChecked(project.readBoolEntry('reneW', 'vattenEnabled', False))
-        set_layer_if_exists(self.mMapLayerComboVatten, project.readEntry('reneW', 'vattenLayer', ''))
-        self.mFieldComboMaterialVatten.setField(project.readEntry('reneW', 'vattenMaterialField', ''))
-        self.mFieldComboYearVatten.setField(project.readEntry('reneW', 'vattenYearField', ''))
-        self.mFieldComboDimensionVatten.setField(project.readEntry('reneW', 'vattenDimensionField', ''))
-        self.mFieldComboRenoYearVatten.setField(project.readEntry('reneW', 'vattenRenoYearField', ''))
-        self.mFieldComboRenoMethodVatten.setField(project.readEntry('reneW', 'vattenRenoMethodField', ''))
+        layer_id = project.readEntry('reneW', 'selectedLayer', '')[0]
+        if layer_id:
+            layer = QgsProject.instance().mapLayer(layer_id)
+            if layer:
+                self.mMapLayerCombo.setLayer(layer)
 
-        # Spillvatten
-        self.mCheckSpillvatten.setChecked(project.readBoolEntry('reneW', 'spillvattenEnabled', False))
-        set_layer_if_exists(self.mMapLayerComboSpillvatten, project.readEntry('reneW', 'spillvattenLayer', ''))
-        self.mFieldComboMaterialSpillvatten.setField(project.readEntry('reneW', 'spillvattenMaterialField', ''))
-        self.mFieldComboYearSpillvatten.setField(project.readEntry('reneW', 'spillvattenYearField', ''))
-        self.mFieldComboDimensionSpillvatten.setField(project.readEntry('reneW', 'spillvattenDimensionField', ''))
-        self.mFieldComboRenoYearSpillvatten.setField(project.readEntry('reneW', 'spillvattenRenoYearField', ''))
-        self.mFieldComboRenoMethodSpillvatten.setField(project.readEntry('reneW', 'spillvattenRenoMethodField', ''))
+        self.mFieldComboMaterial.setField(project.readEntry('reneW', 'materialField', '')[0])
+        self.mFieldComboYear.setField(project.readEntry('reneW', 'yearField', '')[0])
+        self.mFieldComboDimension.setField(project.readEntry('reneW', 'dimensionField', '')[0])
+        self.mFieldComboRenoYear.setField(project.readEntry('reneW', 'renoYearField', '')[0])
+        self.mFieldComboRenoMethod.setField(project.readEntry('reneW', 'renoMethodField', '')[0])
 
-        # Dagvatten
-        self.mCheckDagvatten.setChecked(project.readBoolEntry('reneW', 'dagvattenEnabled', False))
-        set_layer_if_exists(self.mMapLayerComboDagvatten, project.readEntry('reneW', 'dagvattenLayer', ''))
-        self.mFieldComboMaterialDagvatten.setField(project.readEntry('reneW', 'dagvattenMaterialField', ''))
-        self.mFieldComboYearDagvatten.setField(project.readEntry('reneW', 'dagvattenYearField', ''))
-        self.mFieldComboDimensionDagvatten.setField(project.readEntry('reneW', 'dagvattenDimensionField', ''))
-        self.mFieldComboRenoYearDagvatten.setField(project.readEntry('reneW', 'dagvattenRenoYearField', ''))
-        self.mFieldComboRenoMethodDagvatten.setField(project.readEntry('reneW', 'dagvattenRenoMethodField', ''))
+        self.mCheckBoxEnableDimensionWeighting.setChecked(project.readBoolEntry('reneW', 'dimensionWeightingEnabled', False)[0])
+        self.mSpinBoxDimensionFactor.setValue(project.readDoubleEntry('reneW', 'dimensionFactor', 0.001)[0])
 
-        # Global settings
-        self.mCheckBoxEnableDimensionWeighting.setChecked(project.readBoolEntry('reneW', 'dimensionWeightingEnabled', False))
-        self.mSpinBoxDimensionFactor.setValue(project.readDoubleEntry('reneW', 'dimensionFactor', 0.001))
+        # Tab 2
+        def set_layer(combo, key):
+            lid = project.readEntry('reneW', key, '')[0]
+            if lid:
+                l = QgsProject.instance().mapLayer(lid)
+                if l: combo.setLayer(l)
 
-        # Hotspot settings
-        self.mCheckHotspot.setChecked(project.readBoolEntry('reneW', 'hotspotEnabled', False))
-        self.mSpinBoxHotspotThreshold.setValue(project.readDoubleEntry('reneW', 'hotspotThreshold', 0.5))
-        self.mSpinBoxHotspotDistance.setValue(project.readDoubleEntry('reneW', 'hotspotDistance', 5.0))
+        set_layer(self.mMapLayerComboVattenHotspot, 'hotspotLayerVatten')
+        set_layer(self.mMapLayerComboSpillHotspot, 'hotspotLayerSpill')
+        set_layer(self.mMapLayerComboDagHotspot, 'hotspotLayerDag')
+
+        if hasattr(self, 'mCheckHotspot'):
+            self.mCheckHotspot.setChecked(project.readBoolEntry('reneW', 'hotspotEnabled', False)[0])
+
+        self.mSpinBoxHotspotThreshold.setValue(project.readDoubleEntry('reneW', 'hotspotThreshold', 0.5)[0])
+        self.mSpinBoxHotspotDistance.setValue(project.readDoubleEntry('reneW', 'hotspotDistance', 5.0)[0])

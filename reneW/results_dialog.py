@@ -1,7 +1,7 @@
 import os
 import csv
 from qgis.PyQt import uic
-from qgis.PyQt.QtCore import pyqtSignal, QRectF
+from qgis.PyQt.QtCore import pyqtSignal, QRectF, Qt
 from qgis.PyQt.QtWidgets import QDialog, QFileDialog, QTableWidgetItem
 from qgis.core import (QgsProject, QgsPrintLayout, QgsLayoutItemLabel,
                      QgsLayoutExporter, QgsUnitTypes)
@@ -9,6 +9,17 @@ from qgis.core import (QgsProject, QgsPrintLayout, QgsLayoutItemLabel,
 # This loads your .ui file
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'results_dialog.ui'))
+
+class NumericSortItem(QTableWidgetItem):
+    """
+    A QTableWidgetItem that sorts numerically but displays text.
+    """
+    def __init__(self, value, display_text):
+        super().__init__(display_text)
+        self.value = value
+
+    def __lt__(self, other):
+        return self.value < other.value
 
 class ResultsDialog(QDialog, FORM_CLASS):
     # Signal to be emitted when user wants to zoom to a feature
@@ -30,7 +41,8 @@ class ResultsDialog(QDialog, FORM_CLASS):
         """Populates the table with results."""
         self._results_data = results_data
 
-        headers = ["Lagernamn", "Lednings-ID", "Material", "Ålder", "Förnyelsebehov", "Layer ID", "Feature ID"]
+        headers = ["Lagernamn", "Lednings-ID", "Material", "Ålder", "Förnyelsebehov",
+                   "Riskpoäng", "Riskkostnad (SEK)", "Layer ID", "Feature ID"]
         self.mTableWidget.setColumnCount(len(headers))
         self.mTableWidget.setHorizontalHeaderLabels(headers)
         self.mTableWidget.setRowCount(len(results_data))
@@ -41,15 +53,24 @@ class ResultsDialog(QDialog, FORM_CLASS):
             self.mTableWidget.setItem(row, 2, QTableWidgetItem(item.get('material', '')))
             self.mTableWidget.setItem(row, 3, QTableWidgetItem(str(item.get('age', ''))))
 
-            renewal_need_item = QTableWidgetItem()
-            renewal_need_item.setData(0, item.get('renewal_need', 0.0))
-            self.mTableWidget.setItem(row, 4, renewal_need_item)
+            # PoF (Numeric Sort)
+            renewal_need = item.get('renewal_need', 0.0)
+            self.mTableWidget.setItem(row, 4, NumericSortItem(renewal_need, f"{renewal_need:.2f}"))
 
-            self.mTableWidget.setItem(row, 5, QTableWidgetItem(item.get('layer_id', '')))
-            self.mTableWidget.setItem(row, 6, QTableWidgetItem(str(item.get('feature_id', ''))))
+            # Risk Score (Numeric Sort)
+            risk_score = item.get('risk_score', 0.0)
+            self.mTableWidget.setItem(row, 5, NumericSortItem(risk_score, f"{risk_score:.1f}"))
 
-        self.mTableWidget.setColumnHidden(5, True)
-        self.mTableWidget.setColumnHidden(6, True)
+            # Risk Cost (Currency Format, Numeric Sort)
+            risk_cost = item.get('risk_cost', 0.0)
+            cost_str = "{:,.0f} kr".format(risk_cost).replace(',', ' ')
+            self.mTableWidget.setItem(row, 6, NumericSortItem(risk_cost, cost_str))
+
+            self.mTableWidget.setItem(row, 7, QTableWidgetItem(item.get('layer_id', '')))
+            self.mTableWidget.setItem(row, 8, QTableWidgetItem(str(item.get('feature_id', ''))))
+
+        self.mTableWidget.setColumnHidden(7, True)
+        self.mTableWidget.setColumnHidden(8, True)
         self.mTableWidget.resizeColumnsToContents()
 
     def _zoom_to_selected(self):
@@ -59,8 +80,8 @@ class ResultsDialog(QDialog, FORM_CLASS):
             return
 
         row = selected_items[0].row()
-        layer_id_item = self.mTableWidget.item(row, 5)
-        feature_id_item = self.mTableWidget.item(row, 6)
+        layer_id_item = self.mTableWidget.item(row, 7)
+        feature_id_item = self.mTableWidget.item(row, 8)
 
         if layer_id_item and feature_id_item:
             layer_id = layer_id_item.text()
@@ -114,12 +135,16 @@ class ResultsDialog(QDialog, FORM_CLASS):
         layout.addLayoutItem(title)
         title.attemptMove(QRectF(10, 10, 200, 20))
 
+        # Calculate total risk cost
+        total_risk_cost = sum(item.get('risk_cost', 0.0) for item in self._results_data)
+
         # Add Summary Text
         summary_text = f"""
         <b>Sammanfattning:</b><br>
         <ul>
-        <li>Antal högriskledningar (behov > 0.5): {len(self._results_data)} st</li>
+        <li>Antal högriskledningar: {len(self._results_data)} st</li>
         <li>Antal identifierade hotspots: {self._hotspot_count} st</li>
+        <li>Total beräknad riskkostnad: {total_risk_cost:,.0f} kr</li>
         </ul>
         """
         summary = QgsLayoutItemLabel(layout)
@@ -127,7 +152,7 @@ class ResultsDialog(QDialog, FORM_CLASS):
         summary.setFont(self.font())
         summary.setFontSize(12)
         layout.addLayoutItem(summary)
-        summary.attemptMove(QRectF(10, 40, 200, 50))
+        summary.attemptMove(QRectF(10, 40, 300, 60))
 
         # Export
         exporter = QgsLayoutExporter(layout)
