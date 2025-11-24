@@ -1,46 +1,51 @@
 {
     "parameters": {
         "Vatten": {
-            "Gråjärn": {"a": 60, "b": 0.08, "c": 1.0, "note": "Grey Cast Iron - High graphitization risk"},
-            "Segjärn": {"a": 100, "b": 0.04, "c": 0.5, "note": "Ductile Iron - Robust"},
-            "PVC": {"a": 45, "b": 0.15, "c": 2.0, "note": "Conservative for older PVC (Eggshell risk)"},
-            "PE": {"a": 90, "b": 0.05, "c": 0.5, "note": "Polyethylene - Very durable"},
-            "Stål": {"a": 60, "b": 0.07, "c": 1.0},
-            "Asbestcement": {"a": 50, "b": 0.10, "c": 1.5},
-            "Övrigt": {"a": 60, "b": 0.06, "c": 1.0}
+            "Gråjärn": {"a": 60, "b": 2.5, "c": 1.0},
+            "Segjärn": {"a": 100, "b": 3.0, "c": 0.5},
+            "PVC": {"a": 45, "b": 3.0, "c": 2.0},
+            "PE": {"a": 90, "b": 3.0, "c": 0.5},
+            "Stål": {"a": 60, "b": 2.0, "c": 1.0},
+            "Asbestcement": {"a": 50, "b": 3.0, "c": 1.5},
+            "Övrigt": {"a": 60, "b": 2.0, "c": 1.0}
         },
         "Spillvatten": {
-            "Betong": {"a": 70, "b": 0.05, "c": 1.2, "note": "Concrete - Higher degradation (H2S)"},
-            "Plast": {"a": 100, "b": 0.04, "c": 0.5},
-            "Gjutjärn": {"a": 80, "b": 0.06, "c": 1.0},
-            "Tegel": {"a": 100, "b": 0.03, "c": 0.8},
-            "Övrigt": {"a": 60, "b": 0.06, "c": 1.0}
+            "Betong": {"a": 70, "b": 2.2, "c": 1.2},
+            "Plast": {"a": 100, "b": 3.0, "c": 0.5},
+            "Gjutjärn": {"a": 80, "b": 2.0, "c": 1.0},
+            "Tegel": {"a": 100, "b": 1.8, "c": 0.8},
+            "Övrigt": {"a": 60, "b": 2.0, "c": 1.0}
         },
         "Dagvatten": {
-            "Betong": {"a": 90, "b": 0.04, "c": 1.0, "note": "Concrete - Slower degradation than sewage"},
-            "Plast": {"a": 100, "b": 0.04, "c": 0.5},
-            "Övrigt": {"a": 70, "b": 0.05, "c": 1.0}
+            "Betong": {"a": 90, "b": 2.5, "c": 1.0},
+            "Plast": {"a": 100, "b": 3.0, "c": 0.5},
+            "Övrigt": {"a": 70, "b": 2.0, "c": 1.0}
         }
     },
-    "unit_costs": {
-        "Vatten": 3000,
-        "Spillvatten": 4500,
-        "Dagvatten": 3500
+    "cost_parameters": {
+        "prices": {
+            "excavation_m3": 350,
+            "filling_m3": 250,
+            "asphalt_m2": 400,
+            "pipe_material_per_m": {
+                "Vatten": 800,
+                "Spillvatten": 1200,
+                "Dagvatten": 1000
+            }
+        },
+        "trench_defaults": {
+            "depth": 2.5,
+            "width_base_padding": 0.6,
+            "slope_ratio": 1.0,
+            "use_trench_box": false,
+            "include_asphalt": true,
+            "restoration_width_extra": 1.0
+        }
     },
-    "consequence_weights": {
-        "dimension_threshold_small": 150,
-        "dimension_threshold_large": 400,
-        "score_small": 1.0,
-        "score_medium": 2.0,
-        "score_large": 5.0
-    },
+    "consequence_weights": { "dimension_threshold_small": 150, "dimension_threshold_large": 400, "score_small": 1.0, "score_medium": 2.0, "score_large": 5.0 },
     "defaults": {
         "unknown_year_substitute": 1980,
         "unknown_dimension_substitute": 150,
-        "null_markers": {
-            "year": [1900, 0, "0", null],
-            "material": ["odefinierad", "okänt", "unknown", "övrigt", null],
-            "dimension": ["-", "--", "0", 0, null]
-        }
+        "null_markers": { "year": [1900, 0, "0", null], "material": ["odefinierad", "okänt", "unknown", "övrigt", null], "dimension": ["-", "--", "0", 0, null] }
     }
 }

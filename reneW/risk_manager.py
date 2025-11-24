@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime
-from qgis.core import QgsField
+from qgis.core import QgsField, QgsVectorLayer, QgsFeature, QgsGeometry, QgsSpatialIndex, QgsPointXY
 from qgis.PyQt.QtCore import QVariant
 from . import calculation_logic
 from .utils import ParameterLoader, DataSanitizer
@@ -8,191 +8,224 @@ from .strategic_models import ConsequenceCalculator, EconomicModel
 
 class RiskManager:
     """
-    Manages the risk analysis workflow, decoupling business logic from the UI controller.
+    Manages the risk analysis workflow.
+    UPDATED v2.2: Integrated Advanced Cost Engine with Spatial Depth Calculation.
     """
 
     def __init__(self):
-        """Constructor."""
         self.consequence_calc = ConsequenceCalculator()
         self.economic_model = EconomicModel()
         self.unit_costs = ParameterLoader.get_unit_costs()
 
     def execute_analysis(self, layer, config, use_dimension_weighting, dimension_factor, progress_callback=None):
         """
-        Executes the renewal need analysis for a single layer.
-
-        :param layer: QgsVectorLayer to analyze.
-        :param config: Dictionary containing field mappings and layer type.
-        :param use_dimension_weighting: Boolean flag for weighting.
-        :param dimension_factor: Float factor for weighting.
-        :param progress_callback: Optional callable accepting an integer (0-100) for progress updates.
-        :return: Dictionary containing 'status' (bool), 'count' (int), 'high_risk_results' (list), 'message' (str).
+        Executes analysis creating a NEW memory layer (Non-destructive).
+        Includes Spatial Depth Calculation via Nearest Node.
         """
-
         layer_type = config['type']
 
-        # Determine unit cost for this layer type
-        unit_cost = self.unit_costs.get(layer_type, 0.0)
+        # Cost Parameters from Config
+        cost_depth_std = config.get('cost_depth', 2.5)
+        cost_slope = config.get('cost_slope', 1.0)
+        cost_trench_box = config.get('cost_trench_box', False)
+        cost_include_asphalt = config.get('cost_include_asphalt', True)
+        cost_exc_price = config.get('cost_excavation_price', 350.0)
 
-        output_field_name = 'fornyelsebehov'
-        risk_score_field = 'RISK_SCORE'
-        risk_cost_field = 'RISK_COST'
+        if cost_trench_box:
+            cost_slope = 0.0
 
-        provider = layer.dataProvider()
-        fields = provider.fields()
+        # 1. Setup Memory Layer
+        source_fields = layer.fields()
+        output_crs = layer.crs().authid()
 
-        # Ensure output fields exist
-        new_fields = []
-        if fields.indexFromName(output_field_name) == -1:
-            new_fields.append(QgsField(output_field_name, QVariant.Double))
-        if fields.indexFromName(risk_score_field) == -1:
-            new_fields.append(QgsField(risk_score_field, QVariant.Double))
-        if fields.indexFromName(risk_cost_field) == -1:
-            new_fields.append(QgsField(risk_cost_field, QVariant.Double))
+        mem_layer_name = f"reneW: {layer.name()}"
+        mem_layer = QgsVectorLayer(f"LineString?crs={output_crs}", mem_layer_name, "memory")
+        mem_pr = mem_layer.dataProvider()
 
-        if new_fields:
-            provider.addAttributes(new_fields)
-            layer.updateFields()
-            fields = layer.fields() # Refresh
+        new_fields = [f for f in source_fields]
+        out_field_map = {
+            'fornyelsebehov': QgsField('fornyelsebehov', QVariant.Double),
+            'RISK_SCORE': QgsField('RISK_SCORE', QVariant.Double),
+            'RISK_COST': QgsField('RISK_COST', QVariant.Double)
+        }
+        for fname, ffield in out_field_map.items(): new_fields.append(ffield)
 
-        # Get field indices
-        material_idx = fields.indexFromName(config['material_field'])
-        year_idx = fields.indexFromName(config['year_field'])
-        dimension_idx = fields.indexFromName(config['dimension_field'])
-        output_idx = fields.indexFromName(output_field_name)
-        risk_score_idx = fields.indexFromName(risk_score_field)
-        risk_cost_idx = fields.indexFromName(risk_cost_field)
+        mem_pr.addAttributes(new_fields)
+        mem_layer.updateFields()
 
-        # Validation
-        if any(idx == -1 for idx in [material_idx, year_idx, dimension_idx]):
-            return {
-                'status': False,
-                'count': 0,
-                'high_risk_results': [],
-                'message': f"Något av grundfälten (material, anläggningsår, dimension) kunde inte hittas i lagret '{layer.name()}'."
-            }
+        try:
+            mat_idx = source_fields.indexFromName(config['material_field'])
+            year_idx = source_fields.indexFromName(config['year_field'])
+            dim_idx = source_fields.indexFromName(config['dimension_field'])
+        except KeyError: return {'status': False, 'message': "Missing required fields."}
+
+        # Helper to find attribute indices
+        def find_idx(names):
+            for n in names:
+                idx = source_fields.indexFromName(n)
+                if idx != -1: return idx
+            return -1
+
+        vg_start_idx = find_idx(['vg_start', 'VG_START', 'z1', 'Z1'])
+        vg_end_idx = find_idx(['vg_slut', 'VG_SLUT', 'z2', 'Z2'])
+        mark_start_idx = find_idx(['mark_start', 'MARK_START', 'mz1', 'MZ1'])
+        mark_end_idx = find_idx(['mark_slut', 'MARK_SLUT', 'mz2', 'MZ2'])
+
+        # --- Pre-processing: Spatial Index for Nodes ---
+        node_layer = config.get('node_layer')
+        node_ground_field = config.get('node_ground_field')
+        node_index = None
+        node_z_cache = {}
+
+        if node_layer and node_ground_field:
+            node_idx_ground = node_layer.fields().indexFromName(node_ground_field)
+            if node_idx_ground != -1:
+                # Build Spatial Index
+                node_index = QgsSpatialIndex(node_layer.getFeatures())
+                # Cache Ground Levels
+                for f in node_layer.getFeatures():
+                    try:
+                        val = f.attributes()[node_idx_ground]
+                        if val is not None:
+                            node_z_cache[f.id()] = float(val)
+                    except (ValueError, TypeError):
+                        pass
 
         current_year = datetime.now().year
         high_risk_results = []
-
+        new_features = []
         feature_count = layer.featureCount()
-        processed_count = 0
 
-        layer.startEditing()
+        for i, feature in enumerate(layer.getFeatures()):
+            if progress_callback and feature_count > 0 and i % 100 == 0: progress_callback(int((i / feature_count) * 100))
 
-        try:
-            for i, feature in enumerate(layer.getFeatures()):
-                # Progress update
-                if progress_callback and feature_count > 0:
-                    if i % max(1, int(feature_count / 100)) == 0:
-                        percent = int((i / feature_count) * 100)
-                        progress_callback(percent)
+            attrs = feature.attributes()
+            raw_material = attrs[mat_idx] if mat_idx != -1 else ""
+            raw_year = attrs[year_idx] if year_idx != -1 else 0
+            raw_dim = attrs[dim_idx] if dim_idx != -1 else 0
 
-                attrs = feature.attributes()
+            install_year = DataSanitizer.sanitize_year(raw_year)
+            age = max(0, current_year - install_year)
+            dimension = DataSanitizer.sanitize_dimension(raw_dim)
 
-                # --- DATA SANITIZATION SPRINT 3.5 ---
+            # --- Depth Logic ---
+            calc_depth = cost_depth_std
+            spatial_depth_found = False
 
-                # 1. Material
-                material = attrs[material_idx]
-                # MaterialNormalizer handles logic later, but we pass raw string.
+            # 1. Spatial Node Lookup (Priority)
+            # Requires Node Index AND Invert Levels on Pipe
+            if node_index and vg_start_idx != -1 and vg_end_idx != -1 and feature.hasGeometry():
+                geom = feature.geometry()
 
-                # 2. Year (Sanitized)
-                raw_year = attrs[year_idx]
-                installation_year = DataSanitizer.sanitize_year(raw_year)
+                # Extract Polyline
+                line = None
+                if geom.isMultipart():
+                    lines = geom.asMultiPolyline()
+                    if lines: line = lines[0]
+                else:
+                    line = geom.asPolyline()
 
-                age = max(0, current_year - installation_year)
+                if line:
+                    p_start = line[0] # Start Point
+                    p_end = line[-1]  # End Point
 
-                # Renovation Logic (Optional override)
-                if config.get('reno_method_field') and config.get('reno_year_field'):
-                    reno_method_idx = fields.indexFromName(config['reno_method_field'])
-                    reno_year_idx = fields.indexFromName(config['reno_year_field'])
+                    # Find Nearest Nodes
+                    n_start_ids = node_index.nearestNeighbor(QgsPointXY(p_start), 1)
+                    n_end_ids = node_index.nearestNeighbor(QgsPointXY(p_end), 1)
 
-                    if reno_method_idx != -1 and reno_year_idx != -1:
-                        reno_method = attrs[reno_method_idx]
-                        if reno_method and isinstance(reno_method, str):
-                            if 'infodring' in reno_method.lower() or 'strumpa' in reno_method.lower():
-                                # Also sanitize renovation year if found
-                                raw_reno_year = attrs[reno_year_idx]
-                                reno_year = DataSanitizer.sanitize_year(raw_reno_year)
-                                age = max(0, current_year - reno_year)
+                    z_start = None
+                    z_end = None
 
-                # 3. Dimension (Sanitized)
-                raw_dimension = attrs[dimension_idx]
-                dimension = DataSanitizer.sanitize_dimension(raw_dimension)
+                    # Check Start Node (Tolerance 0.1m)
+                    if n_start_ids:
+                        nid = n_start_ids[0]
+                        # Need to verify distance strictly? nearestNeighbor gives closest ID.
+                        # Fetching geometry adds overhead but is required for tolerance check.
+                        n_feat = node_layer.getFeature(nid)
+                        if n_feat.hasGeometry():
+                            dist = n_feat.geometry().distance(QgsGeometry.fromPointXY(QgsPointXY(p_start)))
+                            if dist <= 0.1:
+                                z_start = node_z_cache.get(nid)
 
-                # --- END SANITIZATION ---
+                    # Check End Node
+                    if n_end_ids:
+                        nid = n_end_ids[0]
+                        n_feat = node_layer.getFeature(nid)
+                        if n_feat.hasGeometry():
+                            dist = n_feat.geometry().distance(QgsGeometry.fromPointXY(QgsPointXY(p_end)))
+                            if dist <= 0.1:
+                                z_end = node_z_cache.get(nid)
 
-                # 1. PoF Calculation
-                renewal_need = calculation_logic.calculate_renewal_need(
-                    pipeline_type=layer_type,
-                    material=material,
-                    age=age,
-                    year=installation_year,
-                    dimension=dimension,
-                    use_dimension_weighting=use_dimension_weighting,
-                    dimension_factor=dimension_factor
-                )
+                    # Calculate Depth if both Z found
+                    if z_start is not None and z_end is not None:
+                        try:
+                            vg_s = float(attrs[vg_start_idx])
+                            vg_e = float(attrs[vg_end_idx])
+                            d_s = z_start - vg_s
+                            d_e = z_end - vg_e
+                            if d_s > 0 and d_e > 0:
+                                calc_depth = (d_s + d_e) / 2.0
+                                spatial_depth_found = True
+                        except (ValueError, TypeError):
+                            pass
 
-                # 2. CoF Calculation
-                cof_score = self.consequence_calc.calculate_score(feature, dimension)
+            # 2. Attribute Fallback (If spatial failed)
+            if not spatial_depth_found:
+                if all(idx != -1 for idx in [vg_start_idx, vg_end_idx, mark_start_idx, mark_end_idx]):
+                    try:
+                        vg_avg = (float(attrs[vg_start_idx]) + float(attrs[vg_end_idx])) / 2.0
+                        mark_avg = (float(attrs[mark_start_idx]) + float(attrs[mark_end_idx])) / 2.0
+                        d = mark_avg - vg_avg
+                        if d > 0: calc_depth = d
+                    except: pass # Fallback to std
 
-                # 3. Risk Cost Calculation
-                length = 0.0
-                if feature.hasGeometry():
-                    length = feature.geometry().length()
+            # --- Smart Renovation Logic ---
+            reno_keywords = ['u-liner', 'strumpa', 'infodring', 'relining', 'renovering']
+            is_renovated = False
+            material_for_calc = raw_material
+            if config.get('reno_method_field'):
+                rm_idx = source_fields.indexFromName(config['reno_method_field'])
+                if rm_idx != -1 and attrs[rm_idx]:
+                    if any(k in str(attrs[rm_idx]).lower() for k in reno_keywords): is_renovated = True
+            if not is_renovated and raw_material and isinstance(raw_material, str):
+                 if any(k in raw_material.lower() for k in reno_keywords): is_renovated = True
 
-                risk_cost = self.economic_model.calculate_risk_cost(
-                    pof=renewal_need,
-                    consequence_score=cof_score,
-                    length=length,
-                    unit_cost=unit_cost
-                )
+            if is_renovated:
+                if config.get('reno_year_field'):
+                    ry_idx = source_fields.indexFromName(config['reno_year_field'])
+                    if ry_idx != -1:
+                        ry_val = DataSanitizer.sanitize_year(attrs[ry_idx])
+                        if ry_val > 1900: age = max(0, current_year - ry_val)
+                material_for_calc = 'Plast'
 
-                # 4. Combined Risk Score
-                risk_score = renewal_need * cof_score
+            pof = calculation_logic.calculate_renewal_need(layer_type, material_for_calc, age, install_year, dimension, use_dimension_weighting, dimension_factor)
+            cof = self.consequence_calc.calculate_score(feature, dimension)
+            length = feature.geometry().length() if feature.hasGeometry() else 0
 
-                # Update Attributes
-                layer.changeAttributeValue(feature.id(), output_idx, renewal_need)
-                layer.changeAttributeValue(feature.id(), risk_score_idx, risk_score)
-                layer.changeAttributeValue(feature.id(), risk_cost_idx, risk_cost)
+            # --- ADVANCED COST CALCULATION ---
+            risk_cost = self.economic_model.calculate_risk_cost(
+                pof=pof, consequence_score=cof, length=length,
+                pipeline_type=layer_type, dimension=dimension,
+                depth=calc_depth, slope=cost_slope, include_asphalt=cost_include_asphalt,
+                excavation_price=cost_exc_price
+            )
 
-                # Collect High Risk
-                if renewal_need >= 0.5:
-                    high_risk_results.append({
-                        'layer_name': layer.name(),
-                        'layer_id': layer.id(),
-                        'feature_id': feature.id(),
-                        'material': material,
-                        'age': age,
-                        'renewal_need': renewal_need,
-                        'risk_score': risk_score,
-                        'risk_cost': risk_cost
-                    })
+            risk_score = pof * cof
 
-            if layer.commitChanges():
-                processed_count = layer.featureCount()
-                if progress_callback:
-                    progress_callback(100)
-                return {
-                    'status': True,
-                    'count': processed_count,
-                    'high_risk_results': high_risk_results,
-                    'message': f"Beräkning klar för lagret '{layer.name()}'."
-                }
-            else:
-                layer.rollBack()
-                return {
-                    'status': False,
-                    'count': 0,
-                    'high_risk_results': [],
-                    'message': f"Kunde inte spara ändringar för lagret '{layer.name()}'."
-                }
+            new_feat = QgsFeature()
+            new_feat.setGeometry(feature.geometry())
+            new_attrs = list(attrs) + [pof, risk_score, risk_cost]
+            new_feat.setAttributes(new_attrs)
+            new_features.append(new_feat)
 
-        except Exception as e:
-            layer.rollBack()
-            return {
-                'status': False,
-                'count': 0,
-                'high_risk_results': [],
-                'message': f"Ett oväntat fel inträffade: {str(e)}"
-            }
+            if pof >= 0.5:
+                high_risk_results.append({
+                    'layer_name': mem_layer_name, 'layer_id': mem_layer.id(), 'feature_id': i,
+                    'material': raw_material, 'age': age, 'renewal_need': pof,
+                    'risk_score': risk_score, 'risk_cost': risk_cost
+                })
+
+        mem_pr.addFeatures(new_features)
+        mem_layer.updateExtents()
+
+        return {'status': True, 'count': len(new_features), 'high_risk_results': high_risk_results, 'result_layer': mem_layer, 'message': f"Analys klar. Skapade lager: {mem_layer_name}"}
